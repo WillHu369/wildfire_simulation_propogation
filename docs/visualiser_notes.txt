@@ -1,0 +1,34 @@
+Stuff that I decided to go ahead witht the visualiser for that may need changes later - 
+
+1. Spread rate and fireline intensity. The ignition grid has only two
+values for each cell: the ignition start time and the burn duration. The
+visualizer can also use the spread rate (m/min) and the fireline
+intensity (kW/m) of each cell. These values can give a better color for the
+flames.
+
+I would like to add the two values as optional output arrays from the propagator solver if possible.
+The rate of spread was in the original paper but intensity was its own paper
+
+If the arrays are in the output, the visualizer uses the intensity to set the
+color of the flames and the glow. it can also let you color the
+ground by spread rate or by max intensity ideally. 
+
+If the arrays are not in the output, the visualizer uses only the burn time to set the color of the
+flames(which is what happens now).
+The flame strength starts at zero when the cell ignites. It increases to a maximum at the middle of the burn duration. 
+It then decreases to zero when the cell stops burning. 
+
+2. Differing Burn duration for each terrain type. Instead of having one arbitrary burn duration for all vegetation
+we can have different burn times for each type of vegetation. For
+example, grass burns for a shorter time than forest.
+ 
+Right now i want to store different burn times for each type in a table. Put this table in a configuration folder
+in visualizer/. Put all other values that change with the terrain type
+in the same folder.Examples are the display colors and the flame sizes.
+
+This makes the values easy to change.
+
+3. Multiple ignition points. The current specification in the docs lets the fire
+start at only one cell (row, col). But we can set up the test scenario or a real fire
+to have more than one start point using a list of row cols. Well atleast ill have the visaulizer support this wether we want 
+the solver to actually solve for this is another can of worms
