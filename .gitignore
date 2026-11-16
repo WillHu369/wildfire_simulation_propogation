@@ -70,3 +70,6 @@ Testing/
 # Simulation run outputs (keep the folder, ignore its contents)
 outputs/*
 !outputs/.gitkeep
+
+# Agent temp work
+agents/
