@@ -67,10 +67,11 @@ vcpkg_installed/
 Testing/
 .cache/
 
-# Simulation run outputs (keep the folder, ignore its contents)
+# Simulation run outputs
 outputs/*
 !outputs/.gitkeep
 !outputs/demo/
+!outputs/examples/
 
 # Project specific
 agents/

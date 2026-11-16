@@ -1,11 +1,13 @@
-"""Generate test landscapes in the format described in common.py."""
+import argparse
+from pathlib import Path
 
 import numpy as np
 from scipy.ndimage import gaussian_filter
 
-from . import common
+from . import common, mock_spread
 
-# Preferred elevation (fraction of the maximum) for each vegetation class.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 VEGETATION_ELEVATION = {
     common.GRASSLAND: 0.10,
     common.AGRO_FORESTRY: 0.20,
@@ -26,7 +28,6 @@ def gaussian_band(distance, width):
 
 
 def make_elevation(rng, rows, cols, max_elevation_m):
-    """Hills plus one ridge plus rolling noise, scaled to [0, max_elevation_m]."""
     r, c = np.mgrid[0:rows, 0:cols].astype(float)
     size = min(rows, cols)
 
@@ -36,7 +37,6 @@ def make_elevation(rng, rows, cols, max_elevation_m):
         radius = rng.uniform(0.08, 0.2) * size
         land += rng.uniform(0.5, 1.0) * gaussian_band(np.hypot(r - r0, c - c0), radius)
 
-    # Ridge along a random line through the grid.
     angle = rng.uniform(0, np.pi)
     r0, c0 = rng.uniform(0.3, 0.7) * rows, rng.uniform(0.3, 0.7) * cols
     distance = np.abs((r - r0) * np.cos(angle) - (c - c0) * np.sin(angle))
@@ -47,7 +47,6 @@ def make_elevation(rng, rows, cols, max_elevation_m):
 
 
 def carve_river_and_lake(rng, elevation, max_elevation_m):
-    """Carve a valley from the north edge down to a lake. Returns (elevation, water)."""
     rows, cols = elevation.shape
     r, c = np.mgrid[0:rows, 0:cols].astype(float)
     size = min(rows, cols)
@@ -57,7 +56,6 @@ def carve_river_and_lake(rng, elevation, max_elevation_m):
     river_col = rng.uniform(0.35, 0.65) * cols + wiggle * np.sin(r / rows * 3 * np.pi + phase)
     lake_col = river_col[int(lake_row), 0]
 
-    # Valley floor slopes down from the north edge to the lake.
     floor = np.interp(r, [0, lake_row], [0.2, 0.04]) * max_elevation_m
     floor = np.minimum(floor, elevation)
     valley = gaussian_band(np.abs(c - river_col), 0.08 * size) * (r <= lake_row)
@@ -77,7 +75,6 @@ def carve_river_and_lake(rng, elevation, max_elevation_m):
 
 
 def make_vegetation(rng, elevation, max_elevation_m):
-    """Pick the class whose preferred elevation fits best, plus smooth noise for patches."""
     height = elevation / max_elevation_m
     sigma = min(elevation.shape) / 15
     classes = list(VEGETATION_ELEVATION)
@@ -89,7 +86,6 @@ def make_vegetation(rng, elevation, max_elevation_m):
 
 
 def make_roads(rng, rows, cols):
-    """One road west to east and one north to south, each through random waypoints."""
     roads = np.zeros((rows, cols), dtype=bool)
     for along, across, horizontal in ((cols, rows, True), (rows, cols, False)):
         stops = np.linspace(0, along - 1, 4)
@@ -99,7 +95,7 @@ def make_roads(rng, rows, cols):
         b = np.round(np.interp(t, stops, offsets)).astype(int)
         rr, cc = (b, a) if horizontal else (a, b)
         roads[rr, cc] = True
-        roads[rr[:-1], cc[1:]] = True  # fill diagonal steps so fire cannot slip through
+        roads[rr[:-1], cc[1:]] = True  # close diagonal gaps
     return roads
 
 
@@ -118,3 +114,70 @@ def make_terrain(rows=200, cols=200, seed=0, cell_size_m=30.0, max_elevation_m=8
         "water_mask": water,
         "cell_size_m": cell_size_m,
     }
+
+
+def make_wind(rng, elevation, speed_kmh, from_deg):
+    height = (elevation - elevation.mean()) / elevation.std()
+    speed = speed_kmh * np.clip(1 + 0.25 * height, 0.3, None)
+    direction = from_deg + 20 * smooth_noise(rng, elevation.shape, min(elevation.shape) / 8)
+    return speed, direction % 360
+
+
+def pick_ignitions(rng, terrain_type, count):
+    rows, cols = np.nonzero(common.is_burnable(terrain_type))
+    picks = rng.choice(len(rows), size=count, replace=False)
+    return [[int(rows[i]), int(cols[i])] for i in picks]
+
+
+def make_scenario(
+    rows=200, cols=200, seed=0, ignitions=1, wind_kmh=20.0, wind_from_deg=None, moisture=0.08
+):
+    terrain = make_terrain(rows, cols, seed)
+    rng = np.random.default_rng((seed, 1))
+    if wind_from_deg is None:
+        wind_from_deg = rng.uniform(0, 360)
+    speed, direction = make_wind(rng, terrain["elevation_m"], wind_kmh, wind_from_deg)
+    terrain["wind_speed_kmh"] = speed
+    terrain["wind_from_deg"] = direction
+    terrain["fuel_moisture"] = np.full((rows, cols), moisture)
+
+    points = pick_ignitions(rng, terrain["terrain_type"], ignitions)
+    return terrain, make_settings(points, seed)
+
+
+def make_settings(ignition_points, seed=0):
+    return {
+        "ignition_points": ignition_points,
+        "timestep_s": 60.0,
+        "max_duration_s": 6 * 3600.0,
+        "seed": seed,
+        "burn_duration_s": 600.0,
+    }
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Generate a test scenario and a MOCK fire spread (not PROPAGATOR)."
+    )
+    parser.add_argument("--name", required=True)
+    parser.add_argument("--rows", type=int, default=200)
+    parser.add_argument("--cols", type=int, default=200)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--ignitions", type=int, default=1)
+    parser.add_argument("--wind-kmh", type=float, default=20.0)
+    parser.add_argument("--wind-from", type=float, help="degrees; random if omitted")
+    parser.add_argument("--root", type=Path, default=REPO_ROOT)
+    args = parser.parse_args(argv)
+
+    terrain, settings = make_scenario(
+        args.rows, args.cols, args.seed, args.ignitions, args.wind_kmh, args.wind_from
+    )
+    scenario = args.root / "inputs" / args.name
+    run = args.root / "outputs" / args.name
+    common.save_scenario(scenario, terrain, settings)
+    mock_spread.run(scenario, run)
+    print(f"wrote {scenario} and {run} (mock spread)")
+
+
+if __name__ == "__main__":
+    main()

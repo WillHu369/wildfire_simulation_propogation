@@ -9,7 +9,7 @@ GRASSLAND = 2
 FIRE_PRONE_CONIFERS = 3
 AGRO_FORESTRY = 4
 NOT_FIRE_PRONE_FOREST = 5
-NON_VEGETATED = 6  # roads, water, bare ground; cannot burn
+NON_VEGETATED = 6
 
 NEVER_IGNITED = -1.0
 
@@ -31,8 +31,21 @@ IGNITION_DTYPES = {
 }
 
 
+TERRAIN_TABLE = Path(__file__).parent / "config" / "terrain_types.json"
+
+
 def is_burnable(terrain_type):
     return terrain_type != NON_VEGETATED
+
+
+def load_terrain_table(path=TERRAIN_TABLE):
+    types = json.loads(Path(path).read_text())
+    return {int(k): v for k, v in types.items()}
+
+
+def per_terrain(terrain_type, table, key):
+    lookup = np.array([table[i][key] for i in range(NON_VEGETATED + 1)], dtype=np.float32)
+    return lookup[terrain_type]
 
 
 def cell_states(ignition_time_s, burn_duration_s, t):

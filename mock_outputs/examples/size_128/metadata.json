@@ -1,0 +1,23 @@
+{
+  "model": "mock spread (demonstration only, NOT PROPAGATOR)",
+  "scenario": "size_128",
+  "grid": {
+    "rows": 128,
+    "cols": 128
+  },
+  "cell_size_m": 30.0,
+  "end_time_s": 19081.012257601342,
+  "never_ignited": -1.0,
+  "settings": {
+    "ignition_points": [
+      [
+        91,
+        108
+      ]
+    ],
+    "timestep_s": 60.0,
+    "max_duration_s": 21600.0,
+    "seed": 0,
+    "burn_duration_s": 600.0
+  }
+}

@@ -7,7 +7,6 @@ from visualizer.common import NEVER_IGNITED
 
 @pytest.fixture
 def terrain():
-    """4x5 grassland with a column of water on the east edge."""
     terrain_type = np.full((4, 5), common.GRASSLAND, dtype=np.int8)
     terrain_type[:, 4] = common.NON_VEGETATED
     return {
