@@ -1,0 +1,50 @@
+# Demo scenario: 60 x 60 mixed terrain, single ignition, neutral conditions.
+#
+# Format: one "key = value" per line; "#" starts a comment.
+# File paths are relative to this config file.
+# [REQUIRED] keys must be present or the run stops with an error.
+# [OPTIONAL] keys fall back to the default shown; the solver prints a note
+# for each default it uses.
+
+# --- Required ---------------------------------------------------------------
+
+# [REQUIRED] Terrain IDs, one per cell (0-6; row 0 = north edge).
+terrain_file = terrain.csv
+
+# [REQUIRED] ignition = row col [time_s]   (at least one; repeat for more)
+ignition = 15 10 0
+
+# --- Per-cell layers --------------------------------------------------------
+# [OPTIONAL] Each layer is EITHER one constant for every cell OR a CSV file
+# with the same shape as terrain.csv. Never both.
+
+# [OPTIONAL] Elevation, m.  Default: elevation_m = 0 (flat)
+elevation_m = 0          # or: elevation_file = elevation.csv
+
+# [OPTIONAL] Fuel moisture, fraction 0-1.  Default: moisture = 0 (dry)
+moisture = 0             # or: moisture_file = moisture.csv
+
+# [OPTIONAL] Wind speed, m/s.  Default: wind_speed_m_s = 0
+wind_speed_file = wind_speed.csv
+
+# [OPTIONAL] Wind direction it blows TOWARD, degrees clockwise from north.
+#            Default: wind_direction_deg = 0
+wind_direction_file = wind_direction.csv
+
+# --- Run settings -----------------------------------------------------------
+
+# [OPTIONAL] Cell width, m.  Default: 20
+cell_size_m = 20
+
+# [OPTIONAL] Timestep, s.  Default: 1
+timestep_s = 1
+
+# [OPTIONAL] Random seed (non-negative integer).  Default: 67
+#            Same seed + same inputs = identical fire every run.
+seed = 67
+
+# [OPTIONAL] Hard stop, s.  Default: 3600
+max_duration_s = 3600
+
+# [OPTIONAL] How long each cell is shown burning, s (display only).  Default: 60
+burn_duration_s = 60
