@@ -1,0 +1,35 @@
+{
+  "model": "mock spread (demonstration only, NOT PROPAGATOR)",
+  "scenario": "multiple_ignitions",
+  "grid": {
+    "rows": 128,
+    "cols": 128
+  },
+  "cell_size_m": 30.0,
+  "end_time_s": 17518.925566429658,
+  "never_ignited": -1.0,
+  "settings": {
+    "ignition_points": [
+      [
+        46,
+        21
+      ],
+      [
+        48,
+        84
+      ],
+      [
+        20,
+        122
+      ],
+      [
+        57,
+        55
+      ]
+    ],
+    "timestep_s": 60.0,
+    "max_duration_s": 21600.0,
+    "seed": 3,
+    "burn_duration_s": 600.0
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "ignition_points": [
+    [
+      91,
+      108
+    ]
+  ],
+  "timestep_s": 60.0,
+  "max_duration_s": 21600.0,
+  "seed": 0,
+  "burn_duration_s": 600.0,
+  "cell_size_m": 30.0
+}

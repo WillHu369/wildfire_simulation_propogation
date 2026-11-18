@@ -67,11 +67,16 @@ vcpkg_installed/
 Testing/
 .cache/
 
-# Simulation run outputs (keep the folder, ignore its contents)
+# Simulation run outputs
 outputs/*
 !outputs/.gitkeep
 !outputs/demo/
+!outputs/examples/
+mock_outputs/*
+!mock_outputs/.gitkeep
+!mock_outputs/examples/
 
-# Agent temp work
+# Project specific
 agents/
 .*/
+__pycache__/

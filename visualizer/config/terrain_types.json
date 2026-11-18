@@ -1,0 +1,9 @@
+{
+  "0": {"name": "Broadleaf", "color": "#4b7d5b", "burn_duration_s": 900, "spread_rate_m_min": 6, "fuel_load_kg_m2": 1.5},
+  "1": {"name": "Shrubs", "color": "#968f55", "burn_duration_s": 600, "spread_rate_m_min": 15, "fuel_load_kg_m2": 1.2},
+  "2": {"name": "Grassland", "color": "#b7ab67", "burn_duration_s": 240, "spread_rate_m_min": 30, "fuel_load_kg_m2": 0.4},
+  "3": {"name": "Conifers", "color": "#265946", "burn_duration_s": 1200, "spread_rate_m_min": 12, "fuel_load_kg_m2": 2.5},
+  "4": {"name": "Agro-forest", "color": "#729366", "burn_duration_s": 450, "spread_rate_m_min": 10, "fuel_load_kg_m2": 0.8},
+  "5": {"name": "Low-risk forest", "color": "#6b8e84", "burn_duration_s": 900, "spread_rate_m_min": 3, "fuel_load_kg_m2": 1.5},
+  "6": {"name": "Barren", "color": "#637077", "burn_duration_s": 0, "spread_rate_m_min": 0, "fuel_load_kg_m2": 0}
+}
