@@ -18,7 +18,7 @@ Any CMake generator works. `-G Ninja` is just what was used during development.
 The solver takes two command-line arguments: the config file and an output folder. The config file names the terrain file and any other input files.
 
 ```sh
-solver/build/wildfire_solver inputs/scenarios/demo/config.txt outputs/demo
+solver/build/wildfire_solver inputs_test/scenarios/demo/config.txt outputs/demo
 ```
 
 The solver writes four files to the output folder:
