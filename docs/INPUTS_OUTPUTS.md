@@ -8,8 +8,10 @@ The ideal inputs and outputs for the wildfire solver. This is a draft; file form
    - **Terrain type** (integer ID, see below). Required.
    - **Elevation** (meters). Constant placeholder for now.
    - **Fuel moisture** (fraction 0–1). Constant placeholder for now.
-   - **Wind Speed**
-   - **Direction of wind**
+   - **Wind Speed** (m/s).
+   - **Direction of wind** (degrees clockwise from north, the direction the wind blows *toward*).
+
+   Terrain type comes from `terrain.csv`. Each other layer is either one constant for every cell (the optional default in the settings below) or its own CSV with the same shape as `terrain.csv`: `elevation.csv`, `moisture.csv`, `wind_speed.csv`, `wind_direction.csv`. Per-cell wind allows local wind effects on large real-world maps later, without changing the input format.
 
 2. **Ignition point:** the `(row, col)` cell where the fire starts at `t = 0`. It must be inside the grid and burnable.
 3. **Simulation settings:**
@@ -35,7 +37,7 @@ The ideal inputs and outputs for the wildfire solver. This is a draft; file form
 | 5 | Not fire-prone forest | yes |
 | 6 | Non-vegetated (roads, water, bare ground) | no |
 
-**Grid orientation:** row 0 is the north edge, column 0 is the west edge, and storage is row-major.
+**Grid orientation:** in every grid file, row 0 is the north edge, column 0 is the west edge, and storage is row-major.
 
 ## Outputs
 
