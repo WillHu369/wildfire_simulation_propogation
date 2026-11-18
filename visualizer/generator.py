@@ -173,7 +173,7 @@ def main(argv=None):
         args.rows, args.cols, args.seed, args.ignitions, args.wind_kmh, args.wind_from
     )
     scenario = args.root / "inputs" / args.name
-    run = args.root / "outputs" / args.name
+    run = args.root / "mock_outputs" / args.name
     common.save_scenario(scenario, terrain, settings)
     mock_spread.run(scenario, run)
     print(f"wrote {scenario} and {run} (mock spread)")

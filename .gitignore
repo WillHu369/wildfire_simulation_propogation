@@ -72,6 +72,9 @@ outputs/*
 !outputs/.gitkeep
 !outputs/demo/
 !outputs/examples/
+mock_outputs/*
+!mock_outputs/.gitkeep
+!mock_outputs/examples/
 
 # Project specific
 agents/

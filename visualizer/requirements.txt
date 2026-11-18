@@ -1,5 +1,5 @@
-# Runtime dependencies for the map generator and visualizer (Python 3.12)
 numpy>=2.5,<3
 scipy>=1.18,<2
 vtk>=9.7,<10
 imageio-ffmpeg>=0.8,<1
+flask>=3.1,<4

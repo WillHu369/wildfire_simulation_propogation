@@ -64,37 +64,42 @@ def check_ignition_points(terrain_type, ignition_points):
             raise ValueError(f"ignition point ({r}, {c}) is on a cell that cannot burn")
 
 
-def _cast(arrays, dtypes):
-    return {name: np.asarray(arrays[name], dtype=dtypes[name]) for name in dtypes if name in arrays}
+def write_grids(folder, arrays, dtypes):
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, dtype in dtypes.items():
+        if name in arrays:
+            values = np.asarray(arrays[name], dtype=dtype)
+            fmt = "%.3f" if values.dtype.kind == "f" else "%d"
+            np.savetxt(folder / f"{name}.csv", values, fmt=fmt, delimiter=",")
+
+
+def read_grids(folder, dtypes):
+    folder = Path(folder)
+    return {
+        name: np.loadtxt(folder / f"{name}.csv", delimiter=",", ndmin=2).astype(dtype)
+        for name, dtype in dtypes.items()
+        if (folder / f"{name}.csv").exists()
+    }
 
 
 def save_scenario(folder, terrain, settings):
     check_ignition_points(terrain["terrain_type"], settings["ignition_points"])
-    folder = Path(folder)
-    folder.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        folder / "terrain.npz",
-        cell_size_m=float(terrain["cell_size_m"]),
-        **_cast(terrain, TERRAIN_DTYPES),
-    )
-    (folder / "settings.json").write_text(json.dumps(settings, indent=2) + "\n")
+    write_grids(folder, terrain, TERRAIN_DTYPES)
+    settings = {**settings, "cell_size_m": float(terrain["cell_size_m"])}
+    (Path(folder) / "settings.json").write_text(json.dumps(settings, indent=2) + "\n")
 
 
 def load_scenario(folder):
-    folder = Path(folder)
-    with np.load(folder / "terrain.npz") as npz:
-        terrain = dict(npz)
-    terrain["cell_size_m"] = float(terrain["cell_size_m"])
-    settings = json.loads((folder / "settings.json").read_text())
+    terrain = read_grids(folder, TERRAIN_DTYPES)
+    settings = json.loads((Path(folder) / "settings.json").read_text())
+    terrain["cell_size_m"] = float(settings.pop("cell_size_m"))
     return terrain, settings
 
 
 def save_run(folder, ignition):
-    folder = Path(folder)
-    folder.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(folder / "ignition.npz", **_cast(ignition, IGNITION_DTYPES))
+    write_grids(folder, ignition, IGNITION_DTYPES)
 
 
 def load_run(folder):
-    with np.load(Path(folder) / "ignition.npz") as npz:
-        return dict(npz)
+    return read_grids(folder, IGNITION_DTYPES)

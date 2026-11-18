@@ -61,7 +61,7 @@ def test_wind_follows_requested_direction():
 def test_cli_writes_scenario_and_mock_run(tmp_path):
     main(["--name", "demo", "--rows", "50", "--cols", "50", "--root", str(tmp_path)])
     terrain, settings = common.load_scenario(tmp_path / "inputs" / "demo")
-    ignition = common.load_run(tmp_path / "outputs" / "demo")
+    ignition = common.load_run(tmp_path / "mock_outputs" / "demo")
     assert ignition["ignition_time_s"].shape == terrain["terrain_type"].shape
     r, c = settings["ignition_points"][0]
     assert ignition["ignition_time_s"][r, c] == 0

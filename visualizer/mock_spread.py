@@ -97,7 +97,7 @@ def run(scenario_folder, run_folder):
 def main():
     parser = argparse.ArgumentParser(description="Run the MOCK fire spread (not PROPAGATOR).")
     parser.add_argument("scenario", help="scenario folder, e.g. inputs/demo")
-    parser.add_argument("output", help="run folder to write, e.g. outputs/demo")
+    parser.add_argument("output", help="run folder to write, e.g. mock_outputs/demo")
     args = parser.parse_args()
     ignition = run(args.scenario, args.output)
     burned = int(np.sum(ignition["ignition_time_s"] != common.NEVER_IGNITED))

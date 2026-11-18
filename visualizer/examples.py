@@ -77,7 +77,7 @@ def build_all():
 def main():
     for name, (terrain, settings) in build_all().items():
         scenario = REPO_ROOT / "inputs" / "examples" / name
-        run = REPO_ROOT / "outputs" / "examples" / name
+        run = REPO_ROOT / "mock_outputs" / "examples" / name
         common.save_scenario(scenario, terrain, settings)
         mock_spread.run(scenario, run)
         print(f"wrote {name}")

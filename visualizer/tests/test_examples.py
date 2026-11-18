@@ -23,8 +23,8 @@ def test_multiple_ignitions_has_several_points():
 
 @pytest.mark.parametrize("name", NAMES)
 def test_committed_example_exists(name):
-    assert (REPO_ROOT / "inputs" / "examples" / name / "terrain.npz").exists()
-    assert (REPO_ROOT / "outputs" / "examples" / name / "ignition.npz").exists()
+    assert (REPO_ROOT / "inputs" / "examples" / name / "terrain_type.csv").exists()
+    assert (REPO_ROOT / "mock_outputs" / "examples" / name / "ignition_time_s.csv").exists()
 
 
 def test_committed_small_example_matches_generator():
