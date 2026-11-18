@@ -8,9 +8,12 @@ The ideal inputs and outputs for the wildfire solver. This is a draft; file form
    - **Terrain type** (integer ID, see below). Required.
    - **Elevation** (meters). Constant placeholder for now.
    - **Fuel moisture** (fraction 0–1). Constant placeholder for now.
+   - **Wind Speed**
+   - **Direction of wind**
+
 2. **Ignition point:** the `(row, col)` cell where the fire starts at `t = 0`. It must be inside the grid and burnable.
 3. **Simulation settings:**
-   - Wind speed and direction.
+   - Optional default wind speed and direction.
    - Timestep (seconds).
    - Random seed.
    - Maximum duration (seconds).
