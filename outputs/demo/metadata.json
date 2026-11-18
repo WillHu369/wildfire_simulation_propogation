@@ -1,0 +1,42 @@
+{
+  "grid": {
+    "rows": 60,
+    "cols": 60,
+    "cell_size_m": 20,
+    "order": "row-major",
+    "row0": "north",
+    "col0": "west"
+  },
+  "files": {
+    "ignition_time": { "path": "ignition_time.csv", "units": "s", "never_ignited": -1 },
+    "burn_duration": { "path": "burn_duration.csv", "units": "s", "never_ignited": -1 },
+    "stats": { "path": "stats.csv" }
+  },
+  "timing": {
+    "timestep_s": 1,
+    "max_duration_s": 3600,
+    "end_time_s": 932,
+    "steps": 933,
+    "hit_max_duration": false,
+    "wall_time_s": 0.0011542
+  },
+  "layers": {
+    "terrain": { "file": "inputs\\scenarios\\demo\\terrain.csv" },
+    "elevation_m": { "constant": 0 },
+    "moisture": { "constant": 0 },
+    "wind_speed_m_s": { "file": "inputs\\scenarios\\demo\\wind_speed.csv" },
+    "wind_direction_deg": { "file": "inputs\\scenarios\\demo\\wind_direction.csv" }
+  },
+  "settings": {
+    "config_file": "inputs\\scenarios\\demo\\config.txt",
+    "seed": 67,
+    "burn_duration_s": 60,
+    "wind_direction_convention": "blowing toward, degrees clockwise from north",
+    "ignitions": [{ "row": 15, "col": 10, "time_s": 0 }]
+  },
+  "summary": {
+    "cells_ignited": 3076,
+    "spread_attempts": 11501,
+    "successful_spreads": 4980
+  }
+}
