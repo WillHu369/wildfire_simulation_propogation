@@ -16,6 +16,7 @@ add_library(wildfire_core
   src/terrain.cpp
   src/probability.cpp
   src/travel_time.cpp
+  src/json.cpp
   src/config.cpp
   src/io.cpp
   src/simulation.cpp
