@@ -7,14 +7,14 @@
   "end_time_s": 21600,
   "never_ignited": -1,
   "run": {
-    "wall_time_s": 0.0002331,
+    "wall_time_s": 0.0001859,
     "steps": 21601,
     "min_travel_time_s": 0.329391335299086,
-    "short_crossings": 27,
+    "short_crossings": 26,
     "hit_max_duration": true,
-    "cells_ignited": 119,
-    "spread_attempts": 470,
-    "successful_spreads": 160
+    "cells_ignited": 99,
+    "spread_attempts": 438,
+    "successful_spreads": 121
   },
   "settings": {
     "ignition_points": [[1, 30]],
