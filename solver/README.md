@@ -111,5 +111,8 @@ Each function in the headers has a short In / Out / Why comment.
 - **Slope** is implemented in both places it appears in the paper:
   - *Probability* (Fig. 6): `alpha_h = 2^tanh((3·tanφ)²·sign(tanφ))`, from the CIMA reference code, which reproduces the figure (0.5 steep downhill, 1 flat, 2 steep uphill). It enters Eq. 1 as `alpha_w · alpha_h`, as in the paper's Eq. 2 (the reference code additionally damps this product; we don't).
   - *Speed* (Eq. 6): clamped to 0.01–10×, and the travel distance runs along the ground, √(run² + rise²), both as in the reference code. Without the clamp, cliff-like cells give near-instant crossings.
-- **Wind and moisture probability modifiers are neutral** (`alpha_w = e_m = 1`). Wind and moisture do change travel time (Eq. 4–5), using the burning (source) cell's wind and the target cell's moisture.
+- **Wind** is implemented in both places, using the burning (source) cell's wind:
+  - *Probability* (Fig. 7): `alpha_w` from the CIMA reference code: an S-shaped wind-speed term (km/h, capped at 60) sets an eccentricity `a`, and `(1 + a)(1 − a²) / (1 − a·cos θ)` stretches the fire downwind (up to 2.70× downwind, down to 0.59× upwind). It matches Fig. 7 up to about 20 km/h; above that the figure keeps growing (to ~4 at 100 km/h) while the code stays capped. We follow the code.
+  - *Speed* (Eq. 5): clamped to 0.01–10×, as in the reference code (binds above ~46 km/h of tailwind).
+- **The moisture probability modifier is neutral** (`e_m = 1`). Moisture does change travel time (Eq. 4), using the target cell's moisture.
 - **Arrival times are rounded** to the nearest timestep, with a minimum of 1 step.

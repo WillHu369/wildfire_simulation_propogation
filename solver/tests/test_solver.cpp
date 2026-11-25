@@ -209,6 +209,10 @@ void test_travel_time() {
   CHECK(wildfire::slope_speed_factor(0.7) == 10.0);  // ~35 deg: clamped
   CHECK(wildfire::slope_speed_factor(10.0) == 10.0);
   CHECK(wildfire::slope_speed_factor(-10.0) == 0.01);
+  // Wind factor clamped the same way (binds above ~12.9 m/s of tailwind).
+  CHECK(wildfire::wind_speed_factor(5.0) < 10.0);
+  CHECK(wildfire::wind_speed_factor(20.0) == 10.0);
+  CHECK(wildfire::wind_speed_factor(-50.0) == 0.01);
   // Grassland, 20 m cardinal step, neutral: 20 m / 120 m/min = 10 s.
   CHECK_NEAR(wildfire::travel_time_seconds(20.0, 120.0, 1, 1, 1), 10.0, 1e-12);
   CHECK_NEAR(wildfire::travel_time_seconds(20.0 * std::sqrt(2.0), 120.0, 1, 1, 1),
@@ -429,6 +433,71 @@ void test_slope_in_simulation() {
   const double fastest = std::hypot(20.0, 100.0) / (120.0 * 10.0) * 60.0;
   CHECK(cres.min_travel_time_s > 0.0);
   CHECK(cres.min_travel_time_s >= fastest - 1e-9);
+}
+
+// --- Wind (PPR Fig. 7) --------------------------------------------------------
+
+void test_wind_probability_factor() {
+  using wildfire::wind_probability_factor;
+  const double kmh = 1.0 / 3.6;  // km/h -> m/s
+  // Wind blowing toward the east (90); spread bearings: E = downwind,
+  // N = crosswind, W = upwind.
+  for (double bearing : {0.0, 45.0, 90.0, 180.0, 270.0}) {
+    CHECK_NEAR(wind_probability_factor(0.0, 90.0, bearing), 1.0, 1e-12);  // calm
+  }
+  CHECK_NEAR(wind_probability_factor(20 * kmh, 90.0, 90.0), 1.798, 1e-3);
+  CHECK_NEAR(wind_probability_factor(20 * kmh, 90.0, 0.0), 1.185, 1e-3);
+  CHECK_NEAR(wind_probability_factor(20 * kmh, 90.0, 270.0), 0.884, 1e-3);
+  CHECK_NEAR(wind_probability_factor(60 * kmh, 90.0, 90.0), 2.702, 1e-3);
+  CHECK_NEAR(wind_probability_factor(60 * kmh, 90.0, 270.0), 0.586, 1e-3);
+  // Capped at 60 km/h.
+  CHECK(wind_probability_factor(80 * kmh, 90.0, 90.0) ==
+        wind_probability_factor(60 * kmh, 90.0, 90.0));
+  // Symmetric either side of the wind, and largest straight downwind.
+  CHECK_NEAR(wind_probability_factor(30 * kmh, 90.0, 45.0),
+             wind_probability_factor(30 * kmh, 90.0, 135.0), 1e-12);
+  CHECK(wind_probability_factor(30 * kmh, 90.0, 90.0) >
+        wind_probability_factor(30 * kmh, 90.0, 45.0));
+  CHECK(wind_probability_factor(30 * kmh, 90.0, 45.0) >
+        wind_probability_factor(30 * kmh, 90.0, 270.0));
+}
+
+// Ignition rates of the west and east ends of a 1 x 3 strip lit in the
+// middle, over many seeds. Each end can only be reached by the middle
+// cell's single attempt, so the rates measure that attempt's probability.
+std::pair<double, double> strip_end_rates(const wildfire::Grid& strip) {
+  const int trials = 4000;
+  int west = 0, east = 0;
+  for (int seed = 0; seed < trials; ++seed) {
+    auto cfg = base_config(0, 1);
+    cfg.seed = static_cast<std::uint64_t>(seed);
+    const auto res = wildfire::run_simulation(strip, cfg);
+    west += res.ignition_time_s[0] >= 0.0;
+    east += res.ignition_time_s[2] >= 0.0;
+  }
+  return {static_cast<double>(west) / trials, static_cast<double>(east) / trials};
+}
+
+void test_wind_in_simulation() {
+  const double p_n = 0.475;  // grassland -> grassland
+  auto eq1 = [&](double alpha_wh) { return 1.0 - std::pow(1.0 - p_n, alpha_wh); };
+  const double v = 20.0 / 3.6;  // 20 km/h blowing toward the east
+  const double aw_east = wildfire::wind_probability_factor(v, 90.0, 90.0);
+  const double aw_west = wildfire::wind_probability_factor(v, 90.0, 270.0);
+
+  // Flat strip: downwind (east) ~0.69, upwind (west) ~0.43, vs 0.475 calm.
+  auto strip = uniform_grid(1, 3, Terrain::Grassland);
+  strip.wind_speed_m_s.assign(3, v);
+  strip.wind_direction_deg.assign(3, 90.0);
+  const auto [west, east] = strip_end_rates(strip);
+  CHECK_NEAR(east, eq1(aw_east), 0.03);
+  CHECK_NEAR(west, eq1(aw_west), 0.03);
+
+  // Wind and slope multiply (Eq. 2): same wind, 30 % slope rising east.
+  strip.elevation_m = {0.0, 6.0, 12.0};
+  const auto [west2, east2] = strip_end_rates(strip);
+  CHECK_NEAR(east2, eq1(aw_east * wildfire::slope_probability_factor(0.3)), 0.03);
+  CHECK_NEAR(west2, eq1(aw_west * wildfire::slope_probability_factor(-0.3)), 0.03);
 }
 
 void test_per_cell_wind() {
@@ -723,6 +792,8 @@ int main() {
   test_invalid_ignition();
   test_slope_probability_factor();
   test_slope_in_simulation();
+  test_wind_probability_factor();
+  test_wind_in_simulation();
   test_per_cell_wind();
   test_json();
   test_settings_full();

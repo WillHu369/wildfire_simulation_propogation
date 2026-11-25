@@ -8,7 +8,8 @@ namespace wildfire {
 // PPR Eq. 5: K_w = exp(0.1783 * V)
 // In:  wind_along_m_s (double): wind component along the spread direction,
 //      m/s (negative when spreading against the wind)
-// Out: double > 0, wind speed-up factor K_w
+// Out: double in [0.01, 10], wind speed-up factor K_w (clamped as in the
+//      CIMA reference code [REF])
 // Why: wind makes fire travel faster downwind, slower upwind.
 double wind_speed_factor(double wind_along_m_s);
 
