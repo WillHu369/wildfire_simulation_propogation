@@ -154,6 +154,9 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
             distance, nominal_speed_m_per_min(src_terrain),
             wind_speed_factor(wind_along), slope_speed_factor(tan_phi),
             moisture_speed_factor(grid.moisture[tgt]));
+        if (res.min_travel_time_s < 0.0 || delay_s < res.min_travel_time_s) {
+          res.min_travel_time_s = delay_s;
+        }
 
         schedule(tgt, step + delay_to_steps(delay_s, dt));
       }
@@ -169,6 +172,11 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
   res.steps = step + 1;
   res.end_time_s = static_cast<double>(step) * dt;
   return res;
+}
+
+bool timestep_too_coarse(double timestep_s, const SimResult& result) {
+  return result.min_travel_time_s >= 0.0 &&
+         timestep_s > 0.5 * result.min_travel_time_s;
 }
 
 }  // namespace wildfire

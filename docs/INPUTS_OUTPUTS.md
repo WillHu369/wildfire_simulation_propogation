@@ -27,7 +27,7 @@ Water cells have terrain ID 6 (non-vegetated), so to the solver they behave like
 ```json
 {
   "ignition_points": [[46, 21], [48, 84]],
-  "timestep_s": 60.0,
+  "timestep_s": 1.0,
   "max_duration_s": 21600.0,
   "seed": 3,
   "burn_duration_s": 600.0,
@@ -38,7 +38,7 @@ Water cells have terrain ID 6 (non-vegetated), so to the solver they behave like
 | Key | Meaning | Used by |
 |---|---|---|
 | `ignition_points` | One or more `[row, col]` cells that ignite at `t = 0`; each must be inside the grid and burnable | solver, visualizer |
-| `timestep_s` | Simulation timestep, s | solver |
+| `timestep_s` | Simulation timestep, s. Keep it at most half the fastest cell crossing (the solver warns otherwise); the examples use 1 s. The visualizer can show frames at any interval regardless. | solver |
 | `max_duration_s` | Hard stop, s | solver |
 | `seed` | Random seed (non-negative integer); same seed + same inputs = same fire | solver |
 | `cell_size_m` | Cell width, m | solver, visualizer |
@@ -63,7 +63,7 @@ The model parameters (PROPAGATOR Table 1 spread probabilities, nominal spread sp
 | File | Contents |
 |---|---|
 | `ignition_time_s.csv` | Seconds since the start at which each cell ignited, or `-1` if it never did. Same shape and orientation as the inputs, three decimals. |
-| `metadata.json` | `model`, `solver`, `scenario`, `grid` (rows, cols), `cell_size_m`, `end_time_s`, `never_ignited` (-1), `run` (wall time, steps, counts) and the `settings` used. |
+| `metadata.json` | `model`, `solver`, `scenario`, `grid` (rows, cols), `cell_size_m`, `end_time_s`, `never_ignited` (-1), `run` (wall time, steps, fastest cell crossing `min_travel_time_s`, counts) and the `settings` used. |
 
 ## How the visualizer uses the outputs
 

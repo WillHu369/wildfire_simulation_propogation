@@ -24,7 +24,7 @@ solver/build/wildfire_solver inputs/examples/size_032 outputs/examples/size_032
 The solver writes two files to the output folder:
 
 - `ignition_time_s.csv`: seconds since the start for each cell, or `-1` if the cell never ignited. Three decimals, same layout as the inputs.
-- `metadata.json`: model name, grid size, end time, compute wall time, summary counts, and the settings used.
+- `metadata.json`: model name, grid size, end time, compute wall time, fastest cell crossing (`min_travel_time_s`), summary counts, and the settings used.
 
 How long a cell is *shown* burning is up to the visualizer; the solver does not output it.
 
@@ -47,7 +47,7 @@ All CSVs have the same rows and columns as `terrain_type.csv`. Row 0 is the nort
 ```json
 {
   "ignition_points": [[118, 32]],
-  "timestep_s": 60.0,
+  "timestep_s": 1.0,
   "max_duration_s": 21600.0,
   "seed": 0,
   "burn_duration_s": 600.0,
@@ -58,7 +58,7 @@ All CSVs have the same rows and columns as `terrain_type.csv`. Row 0 is the nort
 | Key | Meaning | Default |
 |---|---|---|
 | `ignition_points` | List of `[row, col]` cells that ignite at `t = 0` | **required** (at least one) |
-| `timestep_s` | Timestep, s | 1 |
+| `timestep_s` | Timestep, s. Arrival times are rounded to whole steps, so keep it at most half the fastest cell crossing; the solver prints a `warning:` if it is coarser | 1 |
 | `max_duration_s` | Hard stop, s | 3600 |
 | `seed` | Random seed (non-negative integer) | 67 |
 | `cell_size_m` | Cell width, m | 20 |

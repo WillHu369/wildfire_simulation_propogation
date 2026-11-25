@@ -291,6 +291,32 @@ void test_firebreak() {
   CHECK(!crossed);
 }
 
+void test_timestep_check() {
+  // Grassland, 20 m cells, no wind/slope: fastest crossing is the cardinal
+  // step, 20 m / 120 m/min = 10 s. Timesteps above 5 s are too coarse.
+  const auto grid = uniform_grid(21, 21, Terrain::Grassland);
+  auto cfg = base_config(10, 10);
+  const auto fine = wildfire::run_simulation(grid, cfg);
+  CHECK_NEAR(fine.min_travel_time_s, 10.0, 1e-9);
+  CHECK(!wildfire::timestep_too_coarse(1.0, fine));
+  CHECK(!wildfire::timestep_too_coarse(5.0, fine));
+  CHECK(wildfire::timestep_too_coarse(5.1, fine));
+
+  // The problem the check guards against: with 60 s steps every crossing is
+  // rounded up to one step, so the same fire finishes much later.
+  cfg.timestep_s = 60.0;
+  const auto coarse = wildfire::run_simulation(grid, cfg);
+  CHECK(wildfire::timestep_too_coarse(cfg.timestep_s, coarse));
+  CHECK(coarse.end_time_s > 3.0 * fine.end_time_s);
+
+  // No spread at all (a lone burnable cell): nothing to warn about.
+  auto lone = uniform_grid(3, 3, Terrain::NonVegetated);
+  lone.terrain[lone.index(1, 1)] = Terrain::Grassland;
+  const auto none = wildfire::run_simulation(lone, base_config(1, 1));
+  CHECK(none.min_travel_time_s == -1.0);
+  CHECK(!wildfire::timestep_too_coarse(60.0, none));
+}
+
 void test_max_duration() {
   const auto grid = uniform_grid(21, 21, Terrain::Grassland);
   auto cfg = base_config(10, 10);
@@ -598,6 +624,7 @@ int main() {
   test_simulation_basics();
   test_reproducible();
   test_firebreak();
+  test_timestep_check();
   test_max_duration();
   test_invalid_ignition();
   test_per_cell_wind();

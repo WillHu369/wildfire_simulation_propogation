@@ -36,6 +36,16 @@ int main(int argc, char** argv) {
     const auto stop = std::chrono::steady_clock::now();
     const double wall_s = std::chrono::duration<double>(stop - start).count();
 
+    if (wildfire::timestep_too_coarse(cfg.timestep_s, result)) {
+      std::cerr << "warning: timestep_s = " << cfg.timestep_s
+                << " s is too coarse for this run. The fastest cell crossing "
+                   "took "
+                << result.min_travel_time_s
+                << " s, and arrival times are rounded to whole steps, so the "
+                   "fire will spread too slowly. Use timestep_s <= "
+                << 0.5 * result.min_travel_time_s << ".\n";
+    }
+
     std::filesystem::create_directories(out_dir);
     wildfire::write_grid_csv((out_dir / "ignition_time_s.csv").string(),
                              grid.rows, grid.cols, result.ignition_time_s);
