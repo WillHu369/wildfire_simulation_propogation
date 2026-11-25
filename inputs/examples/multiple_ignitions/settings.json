@@ -17,7 +17,7 @@
       55
     ]
   ],
-  "timestep_s": 60.0,
+  "timestep_s": 1.0,
   "max_duration_s": 21600.0,
   "seed": 3,
   "burn_duration_s": 600.0,
