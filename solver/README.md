@@ -108,6 +108,8 @@ Each function in the headers has a short In / Out / Why comment.
 
 ## Draft limitations
 
-- **Spread-probability modifiers are neutral.** Wind, slope and moisture currently leave the spread probability unchanged (`alpha_w = alpha_h = e_m = 1`).
-- **Wind and slope do change travel time.** They act through Eq. 5–6, using the burning (source) cell's wind.
+- **Slope** is implemented in both places it appears in the paper:
+  - *Probability* (Fig. 6): `alpha_h = 2^tanh((3·tanφ)²·sign(tanφ))`, from the CIMA reference code, which reproduces the figure (0.5 steep downhill, 1 flat, 2 steep uphill). It enters Eq. 1 as `alpha_w · alpha_h`, as in the paper's Eq. 2 (the reference code additionally damps this product; we don't).
+  - *Speed* (Eq. 6): clamped to 0.01–10×, and the travel distance runs along the ground, √(run² + rise²), both as in the reference code. Without the clamp, cliff-like cells give near-instant crossings.
+- **Wind and moisture probability modifiers are neutral** (`alpha_w = e_m = 1`). Wind and moisture do change travel time (Eq. 4–5), using the burning (source) cell's wind and the target cell's moisture.
 - **Arrival times are rounded** to the nearest timestep, with a minimum of 1 step.

@@ -204,6 +204,11 @@ void test_travel_time() {
   CHECK_NEAR(wildfire::slope_speed_factor(-0.3) * wildfire::slope_speed_factor(0.3),
              1.0, 1e-12);
   CHECK(wildfire::slope_speed_factor(0.3) > 1.0);
+  // Clamped to [0.01, 10] so cliffs can't give absurd speeds.
+  CHECK(wildfire::slope_speed_factor(0.5) < 10.0);   // ~27 deg: not clamped
+  CHECK(wildfire::slope_speed_factor(0.7) == 10.0);  // ~35 deg: clamped
+  CHECK(wildfire::slope_speed_factor(10.0) == 10.0);
+  CHECK(wildfire::slope_speed_factor(-10.0) == 0.01);
   // Grassland, 20 m cardinal step, neutral: 20 m / 120 m/min = 10 s.
   CHECK_NEAR(wildfire::travel_time_seconds(20.0, 120.0, 1, 1, 1), 10.0, 1e-12);
   CHECK_NEAR(wildfire::travel_time_seconds(20.0 * std::sqrt(2.0), 120.0, 1, 1, 1),
@@ -336,6 +341,87 @@ void test_invalid_ignition() {
 }
 
 // --- Per-cell wind ----------------------------------------------------------
+
+// --- Slope (PPR Fig. 6 and Eq. 6) ---------------------------------------------
+
+void test_slope_probability_factor() {
+  using wildfire::slope_probability_factor;
+  // Values read off PPR Fig. 6 (slope in %, as rise/run).
+  CHECK(slope_probability_factor(0.0) == 1.0);
+  CHECK_NEAR(slope_probability_factor(0.25), 1.424, 1e-3);
+  CHECK_NEAR(slope_probability_factor(0.50), 1.970, 1e-3);
+  CHECK_NEAR(slope_probability_factor(1.00), 2.000, 1e-3);
+  CHECK_NEAR(slope_probability_factor(-0.25), 0.702, 1e-3);
+  CHECK_NEAR(slope_probability_factor(-1.00), 0.500, 1e-3);
+  // Bounded, and downhill is the reciprocal of the same uphill slope.
+  bool bounded = true, reciprocal = true, increasing = true;
+  double prev = 0.0;
+  for (int pct = -300; pct <= 300; ++pct) {
+    const double s = pct / 100.0;
+    const double f = slope_probability_factor(s);
+    bounded = bounded && f >= 0.5 && f <= 2.0;
+    reciprocal = reciprocal &&
+                 std::fabs(f * slope_probability_factor(-s) - 1.0) < 1e-12;
+    increasing = increasing && f >= prev;
+    prev = f;
+  }
+  CHECK(bounded);
+  CHECK(reciprocal);
+  CHECK(increasing);
+}
+
+// Grassland grid whose elevation rises toward the east by `rise_per_col` m.
+wildfire::Grid east_ramp(int n, double rise_per_col) {
+  auto g = uniform_grid(n, n, Terrain::Grassland);
+  for (int r = 0; r < n; ++r) {
+    for (int c = 0; c < n; ++c) g.elevation_m[g.index(r, c)] = rise_per_col * c;
+  }
+  return g;
+}
+
+void test_slope_in_simulation() {
+  // Probability (alpha_h): a 1 x 3 strip of grassland on a 30 % slope rising
+  // east, lit in the middle. Each end cell can only be reached by the middle
+  // cell's single attempt, so over many seeds the ignition rate of each end
+  // must match Eq. 1 with alpha_h. (On a big grid the fire burns nearly
+  // everything either way, so whole-grid counts can't show this.)
+  auto strip = east_ramp(3, 6.0);
+  strip.rows = 1;
+  strip.terrain.resize(3);
+  strip.elevation_m = {0.0, 6.0, 12.0};
+  strip.moisture.resize(3);
+  strip.wind_speed_m_s.resize(3);
+  strip.wind_direction_deg.resize(3);
+  const int trials = 4000;
+  int west = 0, east = 0;
+  for (int seed = 0; seed < trials; ++seed) {
+    auto cfg = base_config(0, 1);
+    cfg.seed = static_cast<std::uint64_t>(seed);
+    const auto res = wildfire::run_simulation(strip, cfg);
+    west += res.ignition_time_s[0] >= 0.0;
+    east += res.ignition_time_s[2] >= 0.0;
+  }
+  const double p_n = 0.475;  // grassland -> grassland
+  const double p_up = 1.0 - std::pow(1.0 - p_n, wildfire::slope_probability_factor(0.3));
+  const double p_down = 1.0 - std::pow(1.0 - p_n, wildfire::slope_probability_factor(-0.3));
+  CHECK_NEAR(static_cast<double>(east) / trials, p_up, 0.03);    // ~0.64
+  CHECK_NEAR(static_cast<double>(west) / trials, p_down, 0.03);  // ~0.33
+
+  // Speed (Eq. 6): on a 41 x 41 ramp the uphill side burns sooner.
+  const auto grid = east_ramp(41, 6.0);
+  const auto res = wildfire::run_simulation(grid, base_config(20, 20));
+  const auto [t_west, t_east] = mean_time_west_east(grid, res, 20);
+  CHECK(t_east < t_west);
+
+  // Cliffs: 100 m rise per 20 m column (~79 deg). The speed-up is capped at
+  // 10x and the path runs up the cliff face, so the fastest possible
+  // crossing is sqrt(20^2 + 100^2) m at 120 * 10 m/min.
+  const auto cliffs = east_ramp(21, 100.0);
+  const auto cres = wildfire::run_simulation(cliffs, base_config(10, 10));
+  const double fastest = std::hypot(20.0, 100.0) / (120.0 * 10.0) * 60.0;
+  CHECK(cres.min_travel_time_s > 0.0);
+  CHECK(cres.min_travel_time_s >= fastest - 1e-9);
+}
 
 void test_per_cell_wind() {
   // Wind blowing toward the east everywhere: the east side burns sooner.
@@ -627,6 +713,8 @@ int main() {
   test_timestep_check();
   test_max_duration();
   test_invalid_ignition();
+  test_slope_probability_factor();
+  test_slope_in_simulation();
   test_per_cell_wind();
   test_json();
   test_settings_full();

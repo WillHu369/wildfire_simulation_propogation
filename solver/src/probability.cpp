@@ -6,6 +6,12 @@
 
 namespace wildfire {
 
+double slope_probability_factor(double tan_phi) {
+  const double sign = tan_phi > 0.0 ? 1.0 : (tan_phi < 0.0 ? -1.0 : 0.0);
+  const double s = 3.0 * tan_phi;
+  return std::pow(2.0, std::tanh(s * s * sign));
+}
+
 double spread_probability(double p_n, const SpreadModifiers& mods) {
   if (!std::isfinite(p_n) || p_n < 0.0 || p_n > 1.0) {
     throw std::invalid_argument("spread_probability: p_n must be in [0, 1]");

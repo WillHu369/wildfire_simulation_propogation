@@ -131,8 +131,17 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
 
         ++res.spread_attempts;
 
-        // TODO(model): wind/slope/moisture modifiers are neutral for now.
-        const SpreadModifiers mods;
+        // Slope from source to target: rise over horizontal run, + uphill.
+        const bool diagonal = kDRow[k] != 0 && kDCol[k] != 0;
+        const double run_m =
+            grid.cell_size_m * (diagonal ? std::sqrt(2.0) : 1.0);
+        const double rise_m = grid.elevation_m[tgt] - grid.elevation_m[src];
+        const double tan_phi = rise_m / run_m;
+
+        // Eq. 1-2. TODO(model): wind (alpha_w) and moisture (e_m) are
+        // still neutral.
+        SpreadModifiers mods;
+        mods.alpha_h = slope_probability_factor(tan_phi);
         const double p = spread_probability(src_terrain, tgt_terrain, mods);
         const double r = spread_draw(cfg.seed, static_cast<std::uint64_t>(src),
                                      static_cast<std::uint64_t>(tgt));
@@ -140,15 +149,12 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
 
         ++res.successful_spreads;
 
-        const bool diagonal = kDRow[k] != 0 && kDCol[k] != 0;
-        const double distance =
-            grid.cell_size_m * (diagonal ? std::sqrt(2.0) : 1.0);
         // Wind at the SOURCE cell, as in the CIMA reference code [REF].
         const double wind_along = wind_component_along(
             grid.wind_speed_m_s[src], grid.wind_direction_deg[src],
             bearing_deg(kDRow[k], kDCol[k]));
-        const double tan_phi =
-            (grid.elevation_m[tgt] - grid.elevation_m[src]) / distance;
+        // The fire travels along the ground, including the climb [REF].
+        const double distance = std::hypot(run_m, rise_m);
         // Moisture of the TARGET cell, as in the CIMA reference code [REF].
         const double delay_s = travel_time_seconds(
             distance, nominal_speed_m_per_min(src_terrain),

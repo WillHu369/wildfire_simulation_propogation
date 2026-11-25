@@ -5,13 +5,25 @@
 namespace wildfire {
 
 // Environmental modifiers of the spread probability (PPR Eq. 1-2).
-// The paper gives these only as figures (Figs. 6, 7, 9). Until the project
-// picks a documented form, the draft solver keeps them neutral (= 1).
+// The paper gives these only as figures (Figs. 6, 7, 9). alpha_h uses the
+// closed form from the reference code (slope_probability_factor below);
+// wind and moisture are still neutral (= 1).
 struct SpreadModifiers {
   double alpha_w = 1.0;  // wind effect (PPR Fig. 7), >= 0
   double alpha_h = 1.0;  // slope effect (PPR Fig. 6), >= 0
   double e_m = 1.0;      // moisture effect (PPR Fig. 9), in [0, 1]
 };
+
+// PPR Fig. 6, topographic factor alpha_h. The paper only plots it; this is
+// the formula from the CIMA reference code (propagator_sim, w_h_effect),
+// which reproduces the figure exactly [REF]:
+//   alpha_h = 2^tanh((3 * tan_phi)^2 * sign(tan_phi))
+// In:  tan_phi (double): rise / run from source to target (0.5 = 50 %
+//      slope); positive uphill
+// Out: double in [0.5, 2]: 1 on flat ground, 2 steep uphill, 0.5 steep
+//      downhill; flat near 0 and saturated beyond about +-60 %
+// Why: fire is more likely to spread uphill than downhill.
+double slope_probability_factor(double tan_phi);
 
 // PPR Eq. 1:  p = [1 - (1 - p_n)^(alpha_w * alpha_h)] * e_m
 // In:  p_n (double, 0-1): nominal probability from Table 1

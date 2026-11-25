@@ -13,9 +13,10 @@ namespace wildfire {
 double wind_speed_factor(double wind_along_m_s);
 
 // PPR Eq. 6: K_phi = exp(3.533 * tan(phi)^1.2); downhill uses
-// exp(sign(tan_phi) * 3.533 * |tan_phi|^1.2) as in the CIMA code [REF].
+// exp(sign(tan_phi) * 3.533 * |tan_phi|^1.2), and the result is clamped to
+// [0.01, 10], both as in the CIMA reference code [REF].
 // In:  tan_phi (double): rise / run from source to target
-// Out: double > 0, slope speed-up factor K_phi
+// Out: double in [0.01, 10], slope speed-up factor K_phi
 // Why: fire runs faster uphill, slower downhill.
 double slope_speed_factor(double tan_phi);
 
@@ -27,7 +28,9 @@ double slope_speed_factor(double tan_phi);
 double moisture_speed_factor(double moisture);
 
 // PPR Eq. 3: delta_t = d / (v_n * K_w * K_phi * f_m)
-// In:  distance_m (double, m); v_n_m_per_min (double, m/min);
+// In:  distance_m (double, m): along the ground, i.e. including the climb
+//      (sqrt(run^2 + rise^2)), as in the reference code [REF];
+//      v_n_m_per_min (double, m/min);
 //      k_w, k_phi, f_m (double): factors from the functions above
 // Out: double, travel time in SECONDS
 // Why: how long until a successfully targeted neighbor ignites.
