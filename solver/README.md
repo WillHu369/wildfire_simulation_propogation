@@ -114,5 +114,7 @@ Each function in the headers has a short In / Out / Why comment.
 - **Wind** is implemented in both places, using the burning (source) cell's wind:
   - *Probability* (Fig. 7): `alpha_w` from the CIMA reference code: an S-shaped wind-speed term (km/h, capped at 60) sets an eccentricity `a`, and `(1 + a)(1 − a²) / (1 − a·cos θ)` stretches the fire downwind (up to 2.70× downwind, down to 0.59× upwind). It matches Fig. 7 up to about 20 km/h; above that the figure keeps growing (to ~4 at 100 km/h) while the code stays capped. We follow the code.
   - *Speed* (Eq. 5): clamped to 0.01–10×, as in the reference code (binds above ~46 km/h of tailwind).
-- **The moisture probability modifier is neutral** (`e_m = 1`). Moisture does change travel time (Eq. 4), using the target cell's moisture.
+- **Moisture** is implemented in both places, using the target cell's fuel moisture (a fraction, 0.08 = 8 %):
+  - *Probability* (Fig. 9): `e_m` is the reference code's default (`p_moisture_trucchia`): a 5th-degree polynomial in the ratio moisture ÷ 0.3 (the moisture of extinction), clamped to 0–1. 1 when dry, 0.78 at 8 %, ≈0 at 30 % and above. It multiplies the probability after the wind/slope exponent (Eq. 1). Fig. 9 itself is the code's optional cubic (`p_moisture_baghino`) on the same ratio, up to 0.19 lower in the middle (0.62 at 8 %); we follow the code's default, as for wind.
+  - *Speed* (Eq. 4): `exp(−0.014·M)` with M as a fraction, as the project handoff reads the paper and as the reference code does (its config takes percent and divides by 100 first). That makes it ≈0.999 at 8 %, so moisture acts almost entirely through `e_m`.
 - **Arrival times are rounded** to the nearest timestep, with a minimum of 1 step.

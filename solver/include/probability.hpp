@@ -5,9 +5,9 @@
 namespace wildfire {
 
 // Environmental modifiers of the spread probability (PPR Eq. 1-2).
-// The paper gives these only as figures (Figs. 6, 7, 9). alpha_h and alpha_w
-// use the closed forms from the reference code (slope_probability_factor and
-// wind_probability_factor below); moisture is still neutral (= 1).
+// The paper gives these only as figures (Figs. 6, 7, 9). All three use
+// closed forms from the reference code: slope_probability_factor,
+// wind_probability_factor and moisture_probability_factor below.
 struct SpreadModifiers {
   double alpha_w = 1.0;  // wind effect (PPR Fig. 7), >= 0
   double alpha_h = 1.0;  // slope effect (PPR Fig. 6), >= 0
@@ -42,6 +42,25 @@ double slope_probability_factor(double tan_phi);
 // Why: fire is more likely to spread downwind than upwind.
 double wind_probability_factor(double wind_speed_m_s, double wind_toward_deg,
                                double bearing_deg);
+
+// Moisture of extinction: fuel wetter than this does not carry fire (PPR).
+constexpr double kMoistureOfExtinction = 0.3;
+
+// PPR Fig. 9, moisture factor e_m, as the CIMA reference code computes it by
+// default (p_moisture_trucchia) [REF], with x = moisture / moisture of
+// extinction:
+//   e_m = clamp(-11.507 x^5 + 22.963 x^4 - 17.331 x^3 + 6.598 x^2
+//               - 1.7211 x + 1.0003, 0, 1)
+// This does NOT match Fig. 9 exactly: the figure is the reference code's
+// optional cubic (p_moisture_baghino) on the same ratio, and the curves
+// differ by up to 0.19 in the middle (0.78 vs 0.62 at 8 % moisture). The
+// project chose the code's default, as it did for wind.
+// In:  moisture (double): dead fine fuel moisture of the TARGET cell, as a
+//      fraction (0.08 = 8 %)
+// Out: double in [0, 1]: 1 when dry, 0.78 at 8 %, ~0 at 30 % and above;
+//      never increases with moisture
+// Why: wet fuel is less likely to catch.
+double moisture_probability_factor(double moisture);
 
 // PPR Eq. 1:  p = [1 - (1 - p_n)^(alpha_w * alpha_h)] * e_m
 // In:  p_n (double, 0-1): nominal probability from Table 1

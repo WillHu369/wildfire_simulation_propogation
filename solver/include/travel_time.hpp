@@ -23,7 +23,9 @@ double slope_speed_factor(double tan_phi);
 
 // PPR Eq. 4: f_m = exp(-0.014 * M)
 // In:  moisture (double): fuel moisture, fraction 0-1
-//      TODO(verify): units of M in the paper (the reference code uses a fraction)
+//      Treated as a fraction, as the project handoff reads the paper; with
+//      0.08 that makes f_m ~0.999, so moisture acts almost entirely through
+//      e_m. TODO(verify): if the paper meant percent (8), f_m would be 0.894.
 // Out: double in (0, 1], moisture slow-down factor f_m
 // Why: wet fuel slows the fire.
 double moisture_speed_factor(double moisture);

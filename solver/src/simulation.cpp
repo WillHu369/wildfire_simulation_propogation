@@ -142,11 +142,12 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
         const double wind_toward = grid.wind_direction_deg[src];
         const double bearing = bearing_deg(kDRow[k], kDCol[k]);
 
-        // Eq. 1-2: alpha_wh = alpha_w * alpha_h. TODO(model): moisture (e_m)
-        // is still neutral.
+        // Eq. 1-2: alpha_wh = alpha_w * alpha_h; e_m from the TARGET cell's
+        // fuel moisture, the fuel that has to catch.
         SpreadModifiers mods;
         mods.alpha_w = wind_probability_factor(wind_speed, wind_toward, bearing);
         mods.alpha_h = slope_probability_factor(tan_phi);
+        mods.e_m = moisture_probability_factor(grid.moisture[tgt]);
         const double p = spread_probability(src_terrain, tgt_terrain, mods);
         const double r = spread_draw(cfg.seed, static_cast<std::uint64_t>(src),
                                      static_cast<std::uint64_t>(tgt));

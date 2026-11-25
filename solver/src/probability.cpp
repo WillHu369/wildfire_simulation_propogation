@@ -28,6 +28,14 @@ double wind_probability_factor(double wind_speed_m_s, double wind_toward_deg,
   return (a + 1.0) * (1.0 - a * a) / (1.0 - a * std::cos(theta));
 }
 
+double moisture_probability_factor(double moisture) {
+  const double x = moisture / kMoistureOfExtinction;
+  const double e_m =
+      ((((-11.507 * x + 22.963) * x - 17.331) * x + 6.598) * x - 1.7211) * x +
+      1.0003;
+  return std::clamp(e_m, 0.0, 1.0);
+}
+
 double spread_probability(double p_n, const SpreadModifiers& mods) {
   if (!std::isfinite(p_n) || p_n < 0.0 || p_n > 1.0) {
     throw std::invalid_argument("spread_probability: p_n must be in [0, 1]");

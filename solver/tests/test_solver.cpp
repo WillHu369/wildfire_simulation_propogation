@@ -500,6 +500,48 @@ void test_wind_in_simulation() {
   CHECK_NEAR(west2, eq1(aw_west * wildfire::slope_probability_factor(-0.3)), 0.03);
 }
 
+// --- Moisture (PPR Fig. 9) ----------------------------------------------------
+
+void test_moisture_probability_factor() {
+  using wildfire::moisture_probability_factor;
+  // Reference-code default (trucchia) values, as moisture fractions
+  // (ratio = moisture / 0.3).
+  CHECK(moisture_probability_factor(0.0) == 1.0);  // gives 1.0003: clamped
+  CHECK_NEAR(moisture_probability_factor(0.08), 0.7825, 1e-3);
+  CHECK_NEAR(moisture_probability_factor(0.12), 0.7284, 1e-3);  // ratio 0.4
+  CHECK_NEAR(moisture_probability_factor(0.24), 0.6077, 1e-3);  // ratio 0.8
+  CHECK_NEAR(moisture_probability_factor(0.30), 0.0022, 1e-3);  // extinction
+  CHECK(moisture_probability_factor(0.35) == 0.0);  // wetter than extinction
+  CHECK(moisture_probability_factor(1.0) == 0.0);
+  // Bounded and never increasing with moisture.
+  bool ok = true;
+  double prev = 1.0;
+  for (int i = 0; i <= 100; ++i) {
+    const double e = moisture_probability_factor(i / 100.0);
+    ok = ok && e >= 0.0 && e <= 1.0 && e <= prev;
+    prev = e;
+  }
+  CHECK(ok);
+}
+
+void test_moisture_in_simulation() {
+  // Flat, calm 1 x 3 strip. e_m uses the TARGET cell's moisture: the lit
+  // middle cell is soaked (0.3) but that must not matter; the west end is
+  // at 25 % moisture, the east end dry.
+  auto strip = uniform_grid(1, 3, Terrain::Grassland);
+  strip.moisture = {0.25, 0.30, 0.0};
+  const auto [west, east] = strip_end_rates(strip);
+  const double p_n = 0.475;  // grassland -> grassland
+  CHECK_NEAR(east, p_n, 0.03);
+  CHECK_NEAR(west, p_n * wildfire::moisture_probability_factor(0.25), 0.03);  // ~0.27
+
+  // Uniform 8 % moisture, as in the example scenarios: ~0.37 both ways.
+  strip.moisture.assign(3, 0.08);
+  const auto [west2, east2] = strip_end_rates(strip);
+  CHECK_NEAR(east2, p_n * 0.7825, 0.03);
+  CHECK_NEAR(west2, p_n * 0.7825, 0.03);
+}
+
 void test_per_cell_wind() {
   // Wind blowing toward the east everywhere: the east side burns sooner.
   auto grid = uniform_grid(41, 41, Terrain::Grassland);
@@ -794,6 +836,8 @@ int main() {
   test_slope_in_simulation();
   test_wind_probability_factor();
   test_wind_in_simulation();
+  test_moisture_probability_factor();
+  test_moisture_in_simulation();
   test_per_cell_wind();
   test_json();
   test_settings_full();
