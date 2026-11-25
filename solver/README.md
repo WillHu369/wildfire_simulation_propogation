@@ -1,6 +1,6 @@
 # Wildfire Solver (serial draft)
 
-This is a C++17 serial implementation of a simplified PROPAGATOR model (Trucchia et al. 2020). It reads a terrain grid and settings, simulates fire spread, and writes the ignition grid described in [`docs/INPUTS_OUTPUTS.md`](../docs/INPUTS_OUTPUTS.md).
+This is a C++17 serial implementation of a simplified PROPAGATOR model (Trucchia et al. 2020). It reads a scenario folder (a `settings.json` plus per-cell CSV layers), simulates fire spread, and writes the ignition grid described in [`docs/INPUTS_OUTPUTS.md`](../docs/INPUTS_OUTPUTS.md).
 
 ## Build and test
 
@@ -11,56 +11,69 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Any CMake generator works. `-G Ninja` is just what was used during development.
+Any CMake generator works. `-G Ninja` is just what was used during development. On Windows with Strawberry Perl's MinGW, put `C:\Strawberry\c\bin` on `PATH` before running the executables, or they exit with code 127 (missing runtime DLLs).
 
 ## Run
 
-The solver takes two command-line arguments: the config file and an output folder. The config file names the terrain file and any other input files.
+The solver takes two arguments: a scenario folder (or the `settings.json` inside it) and an output folder. Outputs mirror the input layout, so `inputs/examples/<name>` writes to `outputs/examples/<name>`:
 
 ```sh
-solver/build/wildfire_solver inputs_test/scenarios/demo/config.txt outputs/demo
+solver/build/wildfire_solver inputs/examples/size_032 outputs/examples/size_032
 ```
 
-The solver writes four files to the output folder:
+The solver writes two files to the output folder:
 
-- `ignition_time.csv`: seconds since the start for each cell, or `-1` if the cell never ignited.
-- `burn_duration.csv`: the fixed burn time for ignited cells, or `-1`.
-- `stats.csv`: one row per timestep.
-- `metadata.json`: grid layout, timing, input sources and summary counts.
+- `ignition_time_s.csv`: seconds since the start for each cell, or `-1` if the cell never ignited. Three decimals, same layout as the inputs.
+- `metadata.json`: model name, grid size, end time, compute wall time, summary counts, and the settings used.
 
-## Config file
+How long a cell is *shown* burning is up to the visualizer; the solver does not output it.
 
-The config is plain text with one `key = value` per line. `#` starts a comment. File paths are relative to the config file.
+## Scenario folder
+
+| File | Contents | Units | Required |
+|---|---|---|---|
+| `settings.json` | Run settings (below) | | **yes** |
+| `terrain_type.csv` | Terrain ID per cell (0–6, see below) | | **yes** |
+| `elevation_m.csv` | Elevation per cell | m | no (flat) |
+| `fuel_moisture.csv` | Fuel moisture per cell | fraction 0–1 | no (0, dry) |
+| `wind_speed_kmh.csv` | Wind speed per cell | km/h | no (0) |
+| `wind_from_deg.csv` | Direction the wind blows **from**, clockwise from north | degrees | no (0) |
+| `water_mask.csv` | Visualizer only; ignored by the solver (water is terrain 6) | | no |
+
+All CSVs have the same rows and columns as `terrain_type.csv`. Row 0 is the north edge and column 0 is the west edge. Internally the solver converts wind to m/s and to the direction it blows *toward*.
+
+### settings.json
+
+```json
+{
+  "ignition_points": [[118, 32]],
+  "timestep_s": 60.0,
+  "max_duration_s": 21600.0,
+  "seed": 0,
+  "burn_duration_s": 600.0,
+  "cell_size_m": 30.0
+}
+```
 
 | Key | Meaning | Default |
 |---|---|---|
-| `terrain_file` | CSV of terrain IDs | **required** |
-| `ignition` | `row col [time_s]`; repeat the line for more ignitions | **required** (at least one) |
-| `cell_size_m` | Cell width in meters | 20 |
-| `elevation_m` *or* `elevation_file` | Elevation (m): one constant, or a per-cell CSV | 0 |
-| `moisture` *or* `moisture_file` | Fuel moisture as a fraction 0–1 | 0 |
-| `wind_speed_m_s` *or* `wind_speed_file` | Wind speed in m/s | 0 |
-| `wind_direction_deg` *or* `wind_direction_file` | Direction the wind blows **toward**, clockwise from north | 0 |
-| `timestep_s` | Timestep | 1 |
-| `seed` | Random seed | 67 |
-| `max_duration_s` | Hard stop | 3600 |
-| `burn_duration_s` | Fixed visual burn time | 60 |
+| `ignition_points` | List of `[row, col]` cells that ignite at `t = 0` | **required** (at least one) |
+| `timestep_s` | Timestep, s | 1 |
+| `max_duration_s` | Hard stop, s | 3600 |
+| `seed` | Random seed (non-negative integer) | 67 |
+| `cell_size_m` | Cell width, m | 20 |
+| `burn_duration_s` | Visualizer only; ignored by the solver | |
 
-**Per-cell files** (`*_file`) use the same layout as `terrain.csv`: one number per cell, with the same rows and columns.
+**When something is missing:** an optional setting or layer file falls back to its default, and the solver prints a `note:` line for each one. An unknown key (for example, a typo) also gets a `note:` but doesn't stop the run.
 
-**When a key is missing:**
+**Errors.** The run stops with exit code 1 and a message naming the file (and line, where there is one) before any simulation starts, when:
 
-- If it's optional, the default is used, and the solver prints a `note:` line for each default it applied.
-- If it's required, the run stops with an error.
-
-**Errors.** The run stops with a message naming the file and line, and exit code 1, before any simulation starts, when:
-
-- a key is unknown (for example, a typo) or appears twice;
-- a value is empty or not a number;
-- a layer is given both as a constant and as a file;
-- a layer file has the wrong size or out-of-range values;
-- the terrain file contains an ID that isn't 0–6;
-- an ignition is outside the grid or on non-burnable terrain.
+- `settings.json` is missing, isn't valid JSON, or isn't a JSON object;
+- `ignition_points` is missing, empty, or not a list of `[row, col]` non-negative integer pairs;
+- a setting has the wrong type or is out of range (`timestep_s` and `cell_size_m` must be > 0, `max_duration_s` ≥ 0);
+- `terrain_type.csv` is missing or contains an ID that isn't 0–6;
+- a layer file has the wrong size, ragged rows, non-numbers, or out-of-range values (moisture outside 0–1, negative wind speed);
+- an ignition point is outside the grid or on non-burnable terrain.
 
 **Terrain IDs:**
 
@@ -72,9 +85,9 @@ The config is plain text with one `key = value` per line. `#` starts a comment. 
 | 3 | Fire-prone conifers |
 | 4 | Agro-forestry |
 | 5 | Not fire-prone forest |
-| 6 | Non-vegetated (never burns) |
+| 6 | Non-vegetated: roads, water, bare ground (never burns) |
 
-In every grid file, row 0 is the north edge.
+`inputs_test/` holds the old `config.txt` starter scenario. The solver no longer reads that format.
 
 ## Code layout
 
@@ -82,22 +95,19 @@ Each function in the headers has a short In / Out / Why comment.
 
 | File | Contents |
 |---|---|
-| `terrain.*` | Terrain enum, PPR Table 1 (`p_n`, `v_n`) |
+| `terrain.*` | Terrain enum, PPR Table 1 (`p_n`, `v_n`), stored as printed in the paper |
 | `probability.*` | PPR Eq. 1 and the spread decision (`r < p`) |
 | `rng.hpp` | Deterministic draw keyed by (seed, source cell, target cell). It does not depend on processing order or MPI rank. |
 | `travel_time.*` | PPR Eq. 3–6 |
 | `grid.hpp` | Per-cell layers: terrain, elevation, moisture, wind speed and direction |
-| `simulation.*` | Fixed-timestep loop: activate, spread once, burn, extinguish |
-| `config.*`, `io.*` | Input parsing/validation and output writing |
+| `simulation.*` | Fixed-timestep loop: activate, spread once, stop when nothing is pending |
+| `json.*` | Small dependency-free JSON parser for `settings.json` |
+| `config.*` | Reads `settings.json` and locates the layer files |
+| `io.*` | Reads the CSV layers (with unit conversion), writes the outputs |
 | `main.cpp` | Command-line entry point |
 
 ## Draft limitations
 
-- **Spread-probability modifiers are neutral.** Wind, slope and moisture currently leave the spread probability unchanged (`alpha_w = alpha_h = e_m = 1`). The paper gives these only as figures.
+- **Spread-probability modifiers are neutral.** Wind, slope and moisture currently leave the spread probability unchanged (`alpha_w = alpha_h = e_m = 1`).
 - **Wind and slope do change travel time.** They act through Eq. 5–6, using the burning (source) cell's wind.
-- **Table 1 values to check:**
-  - Grassland → conifers probability.
-  - Broadleaves speed, and the units of the nominal speeds.
-
-  Both are marked `TODO(verify)` in `src/terrain.cpp`.
 - **Arrival times are rounded** to the nearest timestep, with a minimum of 1 step.

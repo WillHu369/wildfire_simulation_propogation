@@ -1,7 +1,6 @@
 #include "simulation.hpp"
 
 #include <cmath>
-#include <deque>
 #include <functional>
 #include <limits>
 #include <queue>
@@ -44,8 +43,8 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
   if (!(cfg.timestep_s > 0.0)) {
     throw std::invalid_argument("timestep_s must be > 0");
   }
-  if (cfg.max_duration_s < 0.0 || cfg.burn_duration_s < 0.0) {
-    throw std::invalid_argument("durations must be >= 0");
+  if (cfg.max_duration_s < 0.0) {
+    throw std::invalid_argument("max_duration_s must be >= 0");
   }
 
   const int n = grid.size();
@@ -53,7 +52,6 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
 
   SimResult res;
   res.ignition_time_s.assign(n, kNeverIgnited);
-  res.burn_duration_s.assign(n, kNeverIgnited);
 
   // Earliest scheduled ignition step per cell, plus a min-heap of events.
   // A heap entry is stale if the cell already ignited or a newer, earlier
@@ -94,9 +92,7 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
   const long long max_step =
       static_cast<long long>(std::floor(cfg.max_duration_s / dt + 1e-9));
 
-  std::deque<int> burning;  // in ignition order, so expiry order matches
   std::vector<int> newly_ignited;
-  int burned_out = 0;
   long long step = 0;
 
   for (; step <= max_step; ++step) {
@@ -110,11 +106,9 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
       if (res.ignition_time_s[cell] != kNeverIgnited) continue;
       if (event_step != pending_step[cell]) continue;  // stale entry
       res.ignition_time_s[cell] = t;
-      res.burn_duration_s[cell] = cfg.burn_duration_s;
       pending_step[cell] = kNoPending;
       --pending_cells;
       newly_ignited.push_back(cell);
-      burning.push_back(cell);
     }
     res.cells_ignited += static_cast<int>(newly_ignited.size());
 
@@ -165,23 +159,9 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
       }
     }
 
-    // 3-4. Cells keep burning until their burn duration expires; no
-    // repeated probability checks. Expired cells are extinguished.
-    while (!burning.empty() &&
-           t >= res.ignition_time_s[burning.front()] + cfg.burn_duration_s) {
-      burning.pop_front();
-      ++burned_out;
-    }
-
-    StepStats s;
-    s.time_s = t;
-    s.burning = static_cast<int>(burning.size());
-    s.burned_out = burned_out;
-    s.new_ignitions = static_cast<int>(newly_ignited.size());
-    s.pending = pending_cells;
-    res.stats.push_back(s);
-
-    if (burning.empty() && pending_cells == 0) break;
+    // 3. Ignited cells never retry: spread is decided once, at ignition.
+    // With nothing left scheduled, no further cell can ever ignite.
+    if (pending_cells == 0) break;
   }
 
   res.hit_max_duration = step > max_step;

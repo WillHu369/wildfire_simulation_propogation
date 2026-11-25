@@ -1,16 +1,21 @@
 // Unit tests for the serial solver. No external framework: run the executable
 // (or `ctest`) and it exits non-zero if any check fails.
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "config.hpp"
 #include "io.hpp"
+#include "json.hpp"
 #include "probability.hpp"
 #include "rng.hpp"
 #include "simulation.hpp"
@@ -59,14 +64,36 @@ wildfire::Grid uniform_grid(int rows, int cols, Terrain t) {
   return g;
 }
 
-// Writes text to a file in a scratch folder and returns its path.
-std::string write_temp(const std::string& name, const std::string& text) {
-  const auto dir = std::filesystem::temp_directory_path() / "wildfire_tests";
-  std::filesystem::create_directories(dir);
-  const auto path = dir / name;
-  std::ofstream(path) << text;
-  return path.string();
+namespace fs = std::filesystem;
+using Files = std::vector<std::pair<std::string, std::string>>;
+
+// Creates a fresh scenario folder in the temp directory holding the given
+// (file name, contents) pairs, and returns the folder's path.
+std::string make_scenario(const std::string& name, const Files& files) {
+  const auto dir = fs::temp_directory_path() / "wildfire_tests" / name;
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  for (const auto& [file, text] : files) std::ofstream(dir / file) << text;
+  return dir.string();
 }
+
+std::string read_text(const std::string& path) {
+  std::ifstream in(path);
+  std::ostringstream s;
+  s << in.rdbuf();
+  return s.str();
+}
+
+bool any_note_contains(const wildfire::SimConfig& cfg, const std::string& text) {
+  for (const auto& note : cfg.notes) {
+    if (note.find(text) != std::string::npos) return true;
+  }
+  return false;
+}
+
+// 3 x 3 grassland with a non-burnable center.
+const char* kTerrain3x3 = "2,2,2\n2,6,2\n2,2,2\n";
+const char* kSettingsOk = R"({"ignition_points": [[0, 0]]})";
 
 template <typename E, typename Fn>
 bool throws(Fn fn) {
@@ -101,7 +128,6 @@ wildfire::SimConfig base_config(int row, int col) {
   cfg.seed = 42;
   cfg.timestep_s = 1.0;
   cfg.max_duration_s = 100000.0;
-  cfg.burn_duration_s = 60.0;
   return cfg;
 }
 
@@ -219,27 +245,23 @@ void test_simulation_basics() {
   CHECK(res.ignition_time_s[grid.index(10, 10)] == 0.0);
   CHECK(res.cells_ignited > 1);
   CHECK(!res.hit_max_duration);
-  CHECK(res.stats.back().burning == 0);
-  CHECK(res.stats.back().pending == 0);
 
   int ignited = 0;
-  bool durations_ok = true;
+  double last_ignition = 0.0;
   bool times_ok = true;
   for (int i = 0; i < grid.size(); ++i) {
     const double t = res.ignition_time_s[i];
-    if (t == wildfire::kNeverIgnited) {
-      durations_ok = durations_ok && res.burn_duration_s[i] == wildfire::kNeverIgnited;
-      continue;
-    }
+    if (t == wildfire::kNeverIgnited) continue;
     ++ignited;
-    durations_ok = durations_ok && res.burn_duration_s[i] == cfg.burn_duration_s;
+    last_ignition = std::max(last_ignition, t);
     // Grassland needs at least 10 s per cardinal cell, so no cell other than
     // the ignition can ignite before t = 10.
     if (i != grid.index(10, 10)) times_ok = times_ok && t >= 10.0;
   }
   CHECK(ignited == res.cells_ignited);
-  CHECK(durations_ok);
   CHECK(times_ok);
+  // The run stops as soon as nothing is pending: at the last ignition.
+  CHECK(res.end_time_s == last_ignition);
 }
 
 void test_reproducible() {
@@ -312,89 +334,255 @@ void test_per_cell_wind() {
   CHECK(w2 < e2);
 }
 
-// --- Config parsing and input validation ------------------------------------
+// --- JSON parser ------------------------------------------------------------
 
-void test_config_defaults_and_errors() {
+void test_json() {
+  using wildfire::JsonValue;
+  const JsonValue v = wildfire::parse_json(
+      R"({"a": [1, -2.5e1, true, null], "b": {"c": "x\né\"/"}, "d": 0})",
+      "t.json");
+  CHECK(v.is_object() && v.object.size() == 3);
+  const JsonValue* a = v.find("a");
+  CHECK(a && a->is_array() && a->array.size() == 4);
+  CHECK(a && a->array[0].number == 1.0 && a->array[1].number == -25.0);
+  CHECK(a && a->array[2].type == JsonValue::Type::Bool && a->array[2].boolean);
+  CHECK(a && a->array[3].type == JsonValue::Type::Null);
+  const JsonValue* c = v.find("b") ? v.find("b")->find("c") : nullptr;
+  CHECK(c && c->string == "x\n\xC3\xA9\"/");  // é -> UTF-8 "é"
+  CHECK(v.find("missing") == nullptr);
+  CHECK(wildfire::parse_json("  [ ]  ", "t").array.empty());
+
   using std::runtime_error;
-  write_temp("t.csv", "2,2,2\n2,6,2\n2,2,2\n");
+  for (const char* bad : {
+           R"({"a": 1,})",          // trailing comma
+           R"({"a": 1, "a": 2})",   // duplicate key
+           R"({"a": 01})",          // leading zero
+           R"({"a": tru})",         // bad literal
+           R"({"a": 1} x)",         // trailing content
+           R"({"a": "abc)",         // unterminated string
+           R"({"a": 1.})",          // digit required after '.'
+           R"({a: 1})",             // unquoted key
+           "",                      // empty document
+       }) {
+    CHECK(throws<runtime_error>([&] { wildfire::parse_json(bad, "t.json"); }));
+  }
+  // Error messages point at the line.
+  try {
+    wildfire::parse_json("{\n  \"a\": 1,\n  \"b\": }", "t.json");
+    CHECK(false);
+  } catch (const runtime_error& e) {
+    CHECK(std::string(e.what()).find("t.json:3:") == 0);
+  }
+}
 
-  const auto ok = wildfire::load_config(
-      write_temp("ok.txt", "terrain_file = t.csv\nignition = 0 0\n"));
-  CHECK(ok.seed == 67);
-  CHECK(ok.burn_duration_s == 60.0);
-  CHECK(ok.ignitions.size() == 1 && ok.ignitions[0].time_s == 0.0);
-  bool seed_noted = false;
-  for (const auto& d : ok.defaults_used) seed_noted = seed_noted || d == "seed = 67";
-  CHECK(seed_noted);
+// --- settings.json ----------------------------------------------------------
 
-  CHECK(throws<runtime_error>([] {
-    wildfire::load_config(write_temp("c1.txt", "ignition = 0 0\n"));  // no terrain
-  }));
-  CHECK(throws<runtime_error>([] {
-    wildfire::load_config(write_temp("c2.txt", "terrain_file = t.csv\n"));  // no ignition
-  }));
-  CHECK(throws<runtime_error>([] {
-    wildfire::load_config(write_temp(
-        "c3.txt", "terrain_file = t.csv\nignition = 0 0\nsed = 4\n"));  // typo
-  }));
-  CHECK(throws<runtime_error>([] {
-    wildfire::load_config(write_temp(
-        "c4.txt", "terrain_file = t.csv\nignition = 0 0\nseed = 1\nseed = 2\n"));
-  }));
-  CHECK(throws<runtime_error>([] {
-    wildfire::load_config(write_temp(
-        "c5.txt", "terrain_file = t.csv\nignition = 0 0\ntimestep_s = fast\n"));
-  }));
-  CHECK(throws<runtime_error>([] {
-    wildfire::load_config(write_temp(
-        "c6.txt", "terrain_file = t.csv\nignition = 0 0\nseed =\n"));
-  }));
-  CHECK(throws<runtime_error>([] {
-    wildfire::load_config(write_temp(
-        "c7.txt", "terrain_file = t.csv\nignition = 0 0\n"
-                  "wind_speed_m_s = 3\nwind_speed_file = w.csv\n"));
-  }));
-  CHECK(throws<runtime_error>([] {
-    wildfire::load_config(write_temp(
-        "c8.txt", "terrain_file = t.csv\nignition = 0 0 5 9\n"));  // extra value
-  }));
+void test_settings_full() {
+  const std::string dir = make_scenario("full", {
+      {"settings.json", R"({
+        "ignition_points": [[0, 0], [2, 1]],
+        "timestep_s": 60.0,
+        "max_duration_s": 21600.0,
+        "seed": 3,
+        "burn_duration_s": 600.0,
+        "cell_size_m": 30.0
+      })"},
+      {"terrain_type.csv", kTerrain3x3},
+      {"elevation_m.csv", "0,1,2\n3,4,5\n6,7,8\n"},
+      {"fuel_moisture.csv", "0.08,0.08,0.08\n0.08,0.08,0.08\n0.08,0.08,0.08\n"},
+      {"wind_speed_kmh.csv", "36,36,36\n36,36,36\n36,36,72\n"},
+      {"wind_from_deg.csv", "270,270,270\n270,270,270\n270,270,0\n"},
+      {"water_mask.csv", "0,0,0\n0,1,0\n0,0,0\n"},  // visualizer only: ignored
+  });
+  const auto cfg = wildfire::load_settings(dir);
+  CHECK(cfg.ignitions.size() == 2);
+  CHECK(cfg.ignitions[1].row == 2 && cfg.ignitions[1].col == 1);
+  CHECK(cfg.ignitions[1].time_s == 0.0);
+  CHECK(cfg.timestep_s == 60.0 && cfg.max_duration_s == 21600.0);
+  CHECK(cfg.seed == 3 && cfg.cell_size_m == 30.0);
+  CHECK(cfg.scenario_name == "full");
+  CHECK(cfg.notes.empty());  // burn_duration_s is a known visualizer key
 
-  // Ignition on the non-vegetated center cell is rejected before simulating.
-  const auto bad_ig = wildfire::load_config(
-      write_temp("c9.txt", "terrain_file = t.csv\nignition = 1 1\n"));
-  const auto grid = wildfire::load_grid(bad_ig);
+  // The settings.json path itself works the same as the folder.
+  const auto same = wildfire::load_settings((fs::path(dir) / "settings.json").string());
+  CHECK(same.seed == 3 && same.scenario_name == "full" &&
+        same.terrain_file == cfg.terrain_file);
+
+  // Layers, with wind converted to m/s and "blowing toward".
+  const auto grid = wildfire::load_grid(cfg);
+  CHECK(grid.rows == 3 && grid.cols == 3 && grid.cell_size_m == 30.0);
+  CHECK(grid.terrain[grid.index(1, 1)] == Terrain::NonVegetated);
+  CHECK(grid.elevation_m[grid.index(1, 2)] == 5.0);
+  CHECK_NEAR(grid.moisture[0], 0.08, 1e-12);
+  CHECK_NEAR(grid.wind_speed_m_s[0], 10.0, 1e-12);                  // 36 km/h
+  CHECK_NEAR(grid.wind_speed_m_s[grid.index(2, 2)], 20.0, 1e-12);   // 72 km/h
+  CHECK_NEAR(grid.wind_direction_deg[0], 90.0, 1e-12);   // from W -> toward E
+  CHECK_NEAR(grid.wind_direction_deg[grid.index(2, 2)], 180.0, 1e-12);  // from N
+
+  // An ignition on the non-burnable center is rejected before simulating.
+  auto bad_ig = cfg;
+  bad_ig.ignitions = {{1, 1, 0.0}};
+  CHECK(throws_invalid([&] { wildfire::run_simulation(grid, bad_ig); }));
+  bad_ig.ignitions = {{3, 0, 0.0}};  // outside the 3 x 3 grid
   CHECK(throws_invalid([&] { wildfire::run_simulation(grid, bad_ig); }));
 }
 
-void test_layer_files() {
-  using std::runtime_error;
-  write_temp("t.csv", "2,2,2\n2,6,2\n2,2,2\n");
-  write_temp("ws.csv", "1,2,3\n4,5,6\n7,8,9\n");
-  write_temp("wd.csv", "90,90,90\n90,90,90\n90,90,90\n");
-  const auto cfg = wildfire::load_config(write_temp(
-      "l1.txt", "terrain_file = t.csv\nignition = 0 0\n"
-                "wind_speed_file = ws.csv\nwind_direction_file = wd.csv\n"));
-  const auto grid = wildfire::load_grid(cfg);
-  CHECK(grid.rows == 3 && grid.cols == 3);
-  CHECK(grid.wind_speed_m_s[grid.index(1, 2)] == 6.0);
-  CHECK(grid.wind_direction_deg[grid.index(2, 0)] == 90.0);
-  CHECK(grid.moisture.size() == 9 && grid.moisture[4] == 0.0);  // default
+void test_settings_defaults() {
+  // Only the required pieces: ignition_points and terrain_type.csv.
+  const std::string dir = make_scenario("minimal", {
+      {"settings.json", kSettingsOk},
+      {"terrain_type.csv", kTerrain3x3},
+  });
+  const auto cfg = wildfire::load_settings(dir);
+  CHECK(cfg.seed == 67 && cfg.timestep_s == 1.0);
+  CHECK(cfg.cell_size_m == 20.0 && cfg.max_duration_s == 3600.0);
+  CHECK(any_note_contains(cfg, "seed = 67"));
+  CHECK(any_note_contains(cfg, "timestep_s = 1"));
+  CHECK(any_note_contains(cfg, "elevation_m.csv not found"));
+  CHECK(any_note_contains(cfg, "wind_speed_kmh.csv not found"));
+  CHECK(cfg.notes.size() == 8);  // 4 settings + 4 layer files
 
-  write_temp("ws_small.csv", "1,2\n3,4\n");
-  write_temp("ws_neg.csv", "1,2,3\n4,-5,6\n7,8,9\n");
-  write_temp("t_bad.csv", "2,2,2\n2,9,2\n2,2,2\n");
-  CHECK(throws<runtime_error>([] {
-    wildfire::load_grid(wildfire::load_config(write_temp(
-        "l2.txt", "terrain_file = t.csv\nignition = 0 0\nwind_speed_file = ws_small.csv\n")));
+  const auto grid = wildfire::load_grid(cfg);
+  bool neutral = true;
+  for (int i = 0; i < grid.size(); ++i) {
+    neutral = neutral && grid.elevation_m[i] == 0.0 && grid.moisture[i] == 0.0 &&
+              grid.wind_speed_m_s[i] == 0.0;
+  }
+  CHECK(neutral);
+
+  // Unknown keys (likely typos) are reported but do not stop the run.
+  const auto typo = wildfire::load_settings(make_scenario("typo", {
+      {"settings.json", R"({"ignition_points": [[0, 0]], "sed": 4})"},
+      {"terrain_type.csv", kTerrain3x3},
   }));
-  CHECK(throws<runtime_error>([] {
-    wildfire::load_grid(wildfire::load_config(write_temp(
-        "l3.txt", "terrain_file = t.csv\nignition = 0 0\nwind_speed_file = ws_neg.csv\n")));
-  }));
-  CHECK(throws<runtime_error>([] {
-    wildfire::load_grid(wildfire::load_config(write_temp(
-        "l4.txt", "terrain_file = t_bad.csv\nignition = 0 0\n")));
-  }));
+  CHECK(any_note_contains(typo, "\"sed\""));
+  CHECK(typo.seed == 67);
+}
+
+void test_settings_errors() {
+  using std::runtime_error;
+  // Each of these settings.json files must be rejected.
+  const char* bad_settings[] = {
+      R"({"seed": 1})",                                     // no ignition_points
+      R"({"ignition_points": []})",                         // empty
+      R"({"ignition_points": [0, 0]})",                     // not a list of pairs
+      R"({"ignition_points": [[1]]})",                      // too few coords
+      R"({"ignition_points": [[1, 2, 3]]})",                // too many coords
+      R"({"ignition_points": [[1.5, 2]]})",                 // not an integer
+      R"({"ignition_points": [[-1, 0]]})",                  // negative
+      R"({"ignition_points": [["1", "2"]]})",               // strings
+      R"({"ignition_points": [[0, 0]], "timestep_s": "fast"})",
+      R"({"ignition_points": [[0, 0]], "timestep_s": 0})",
+      R"({"ignition_points": [[0, 0]], "cell_size_m": -30})",
+      R"({"ignition_points": [[0, 0]], "max_duration_s": -1})",
+      R"({"ignition_points": [[0, 0]], "seed": -1})",
+      R"({"ignition_points": [[0, 0]], "seed": 1.5})",
+      R"([{"ignition_points": [[0, 0]]}])",                 // root not an object
+      R"({"ignition_points": [[0, 0]],})",                  // malformed JSON
+  };
+  int i = 0;
+  for (const char* text : bad_settings) {
+    const std::string dir = make_scenario("bad" + std::to_string(i++), {
+        {"settings.json", text},
+        {"terrain_type.csv", kTerrain3x3},
+    });
+    CHECK(throws<runtime_error>([&] { wildfire::load_settings(dir); }));
+  }
+
+  // Missing settings.json, missing terrain_type.csv.
+  const std::string empty = make_scenario("empty", {});
+  CHECK(throws<runtime_error>([&] { wildfire::load_settings(empty); }));
+  const std::string no_terrain = make_scenario("no_terrain", {
+      {"settings.json", kSettingsOk},
+  });
+  CHECK(throws<runtime_error>([&] { wildfire::load_settings(no_terrain); }));
+}
+
+void test_layer_errors() {
+  using std::runtime_error;
+  // Each layer file must be rejected by load_grid.
+  const Files bad_layers[] = {
+      {{"wind_speed_kmh.csv", "1,2\n3,4\n"}},                 // wrong size
+      {{"wind_speed_kmh.csv", "1,2,3\n4,-5,6\n7,8,9\n"}},     // negative
+      {{"fuel_moisture.csv", "0,0,0\n0,1.5,0\n0,0,0\n"}},     // not a fraction
+      {{"elevation_m.csv", "0,0,0\n0,0\n0,0,0\n"}},           // ragged row
+      {{"elevation_m.csv", "0,0,0\n0,x,0\n0,0,0\n"}},         // not a number
+      {{"terrain_type.csv", "2,2,2\n2,9,2\n2,2,2\n"}},        // unknown terrain id
+  };
+  int i = 0;
+  for (const Files& layer : bad_layers) {
+    Files files = {{"settings.json", kSettingsOk}};
+    if (layer[0].first != "terrain_type.csv") files.push_back({"terrain_type.csv", kTerrain3x3});
+    files.push_back(layer[0]);
+    const std::string dir = make_scenario("bad_layer" + std::to_string(i++), files);
+    CHECK(throws<runtime_error>([&] {
+      wildfire::load_grid(wildfire::load_settings(dir));
+    }));
+  }
+}
+
+void test_wind_conversion() {
+  CHECK_NEAR(wildfire::kmh_to_m_s(36.0), 10.0, 1e-12);
+  CHECK_NEAR(wildfire::wind_from_to_toward_deg(0.0), 180.0, 1e-12);
+  CHECK_NEAR(wildfire::wind_from_to_toward_deg(270.0), 90.0, 1e-12);
+  CHECK_NEAR(wildfire::wind_from_to_toward_deg(350.0), 170.0, 1e-12);
+  CHECK_NEAR(wildfire::wind_from_to_toward_deg(-90.0), 90.0, 1e-12);
+  CHECK_NEAR(wildfire::wind_from_to_toward_deg(540.0), 0.0, 1e-12);
+
+  // End to end: a westerly wind (FROM 270) pushes the fire EAST.
+  // 41 x 41 grassland, 30 km/h wind from the west everywhere.
+  std::string terrain, speed, from;
+  for (int r = 0; r < 41; ++r) {
+    for (int c = 0; c < 41; ++c) {
+      const char* sep = c ? "," : "";
+      terrain += std::string(sep) + "2";
+      speed += std::string(sep) + "30";
+      from += std::string(sep) + "270";
+    }
+    terrain += "\n";
+    speed += "\n";
+    from += "\n";
+  }
+  const std::string dir = make_scenario("westerly", {
+      {"settings.json", R"({"ignition_points": [[20, 20]], "seed": 42,
+                            "timestep_s": 1, "max_duration_s": 100000})"},
+      {"terrain_type.csv", terrain},
+      {"wind_speed_kmh.csv", speed},
+      {"wind_from_deg.csv", from},
+  });
+  const auto cfg = wildfire::load_settings(dir);
+  const auto grid = wildfire::load_grid(cfg);
+  const auto res = wildfire::run_simulation(grid, cfg);
+  const auto [west, east] = mean_time_west_east(grid, res, 20);
+  CHECK(east < west);
+}
+
+// --- Outputs ----------------------------------------------------------------
+
+void test_outputs() {
+  const std::string dir = make_scenario("outputs", {});
+  const std::string csv = (fs::path(dir) / "ignition_time_s.csv").string();
+  wildfire::write_grid_csv(csv, 2, 2, {-1.0, 0.0, 60.0, 1234567.5});
+  // Fixed 3 decimals, like the visualizer's files; never scientific notation.
+  CHECK(read_text(csv) == "-1.000,0.000\n60.000,1234567.500\n");
+
+  // metadata.json is valid JSON with the fields the visualizer reads.
+  const auto grid = uniform_grid(5, 5, Terrain::Grassland);
+  auto cfg = base_config(2, 2);
+  cfg.scenario_name = "my \"quoted\" run";
+  const auto res = wildfire::run_simulation(grid, cfg);
+  const std::string meta = (fs::path(dir) / "metadata.json").string();
+  wildfire::write_metadata_json(meta, grid, cfg, res, 0.25);
+  const auto json = wildfire::parse_json(read_text(meta), meta);
+  CHECK(json.find("model") && json.find("model")->string.find("PROPAGATOR") == 0);
+  CHECK(json.find("scenario") && json.find("scenario")->string == cfg.scenario_name);
+  CHECK(json.find("never_ignited") && json.find("never_ignited")->number == -1.0);
+  CHECK(json.find("end_time_s") && json.find("end_time_s")->number == res.end_time_s);
+  const auto* settings = json.find("settings");
+  const auto* points = settings ? settings->find("ignition_points") : nullptr;
+  CHECK(points && points->array.size() == 1 && points->array[0].array[0].number == 2.0);
+  const auto* run = json.find("run");
+  CHECK(run && run->find("wall_time_s") && run->find("wall_time_s")->number == 0.25);
 }
 
 }  // namespace
@@ -413,8 +601,13 @@ int main() {
   test_max_duration();
   test_invalid_ignition();
   test_per_cell_wind();
-  test_config_defaults_and_errors();
-  test_layer_files();
+  test_json();
+  test_settings_full();
+  test_settings_defaults();
+  test_settings_errors();
+  test_layer_errors();
+  test_wind_conversion();
+  test_outputs();
 
   std::cout << (g_checks - g_failures) << "/" << g_checks << " checks passed\n";
   return g_failures == 0 ? 0 : 1;
