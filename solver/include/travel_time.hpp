@@ -8,26 +8,32 @@ namespace wildfire {
 // PPR Eq. 5: K_w = exp(0.1783 * V)
 // In:  wind_along_m_s (double): wind component along the spread direction,
 //      m/s (negative when spreading against the wind)
-// Out: double > 0, wind speed-up factor K_w
+// Out: double in [0.01, 10], wind speed-up factor K_w (clamped as in the
+//      CIMA reference code [REF])
 // Why: wind makes fire travel faster downwind, slower upwind.
 double wind_speed_factor(double wind_along_m_s);
 
 // PPR Eq. 6: K_phi = exp(3.533 * tan(phi)^1.2); downhill uses
-// exp(sign(tan_phi) * 3.533 * |tan_phi|^1.2) as in the CIMA code [REF].
+// exp(sign(tan_phi) * 3.533 * |tan_phi|^1.2), and the result is clamped to
+// [0.01, 10], both as in the CIMA reference code [REF].
 // In:  tan_phi (double): rise / run from source to target
-// Out: double > 0, slope speed-up factor K_phi
+// Out: double in [0.01, 10], slope speed-up factor K_phi
 // Why: fire runs faster uphill, slower downhill.
 double slope_speed_factor(double tan_phi);
 
 // PPR Eq. 4: f_m = exp(-0.014 * M)
 // In:  moisture (double): fuel moisture, fraction 0-1
-//      TODO(verify): units of M in the paper (the reference code uses a fraction)
+//      Treated as a fraction, as the project handoff reads the paper; with
+//      0.08 that makes f_m ~0.999, so moisture acts almost entirely through
+//      e_m. TODO(verify): if the paper meant percent (8), f_m would be 0.894.
 // Out: double in (0, 1], moisture slow-down factor f_m
 // Why: wet fuel slows the fire.
 double moisture_speed_factor(double moisture);
 
 // PPR Eq. 3: delta_t = d / (v_n * K_w * K_phi * f_m)
-// In:  distance_m (double, m); v_n_m_per_min (double, m/min);
+// In:  distance_m (double, m): along the ground, i.e. including the climb
+//      (sqrt(run^2 + rise^2)), as in the reference code [REF];
+//      v_n_m_per_min (double, m/min);
 //      k_w, k_phi, f_m (double): factors from the functions above
 // Out: double, travel time in SECONDS
 // Why: how long until a successfully targeted neighbor ignites.

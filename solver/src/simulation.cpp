@@ -1,7 +1,6 @@
 #include "simulation.hpp"
 
 #include <cmath>
-#include <deque>
 #include <functional>
 #include <limits>
 #include <queue>
@@ -44,8 +43,8 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
   if (!(cfg.timestep_s > 0.0)) {
     throw std::invalid_argument("timestep_s must be > 0");
   }
-  if (cfg.max_duration_s < 0.0 || cfg.burn_duration_s < 0.0) {
-    throw std::invalid_argument("durations must be >= 0");
+  if (cfg.max_duration_s < 0.0) {
+    throw std::invalid_argument("max_duration_s must be >= 0");
   }
 
   const int n = grid.size();
@@ -53,7 +52,6 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
 
   SimResult res;
   res.ignition_time_s.assign(n, kNeverIgnited);
-  res.burn_duration_s.assign(n, kNeverIgnited);
 
   // Earliest scheduled ignition step per cell, plus a min-heap of events.
   // A heap entry is stale if the cell already ignited or a newer, earlier
@@ -94,9 +92,7 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
   const long long max_step =
       static_cast<long long>(std::floor(cfg.max_duration_s / dt + 1e-9));
 
-  std::deque<int> burning;  // in ignition order, so expiry order matches
   std::vector<int> newly_ignited;
-  int burned_out = 0;
   long long step = 0;
 
   for (; step <= max_step; ++step) {
@@ -110,11 +106,9 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
       if (res.ignition_time_s[cell] != kNeverIgnited) continue;
       if (event_step != pending_step[cell]) continue;  // stale entry
       res.ignition_time_s[cell] = t;
-      res.burn_duration_s[cell] = cfg.burn_duration_s;
       pending_step[cell] = kNoPending;
       --pending_cells;
       newly_ignited.push_back(cell);
-      burning.push_back(cell);
     }
     res.cells_ignited += static_cast<int>(newly_ignited.size());
 
@@ -137,8 +131,23 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
 
         ++res.spread_attempts;
 
-        // TODO(model): wind/slope/moisture modifiers are neutral for now.
-        const SpreadModifiers mods;
+        // Slope from source to target: rise over horizontal run, + uphill.
+        const bool diagonal = kDRow[k] != 0 && kDCol[k] != 0;
+        const double run_m =
+            grid.cell_size_m * (diagonal ? std::sqrt(2.0) : 1.0);
+        const double rise_m = grid.elevation_m[tgt] - grid.elevation_m[src];
+        const double tan_phi = rise_m / run_m;
+        // Wind at the SOURCE cell, as in the CIMA reference code [REF].
+        const double wind_speed = grid.wind_speed_m_s[src];
+        const double wind_toward = grid.wind_direction_deg[src];
+        const double bearing = bearing_deg(kDRow[k], kDCol[k]);
+
+        // Eq. 1-2: alpha_wh = alpha_w * alpha_h; e_m from the TARGET cell's
+        // fuel moisture, the fuel that has to catch.
+        SpreadModifiers mods;
+        mods.alpha_w = wind_probability_factor(wind_speed, wind_toward, bearing);
+        mods.alpha_h = slope_probability_factor(tan_phi);
+        mods.e_m = moisture_probability_factor(grid.moisture[tgt]);
         const double p = spread_probability(src_terrain, tgt_terrain, mods);
         const double r = spread_draw(cfg.seed, static_cast<std::uint64_t>(src),
                                      static_cast<std::uint64_t>(tgt));
@@ -146,42 +155,27 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
 
         ++res.successful_spreads;
 
-        const bool diagonal = kDRow[k] != 0 && kDCol[k] != 0;
-        const double distance =
-            grid.cell_size_m * (diagonal ? std::sqrt(2.0) : 1.0);
-        // Wind at the SOURCE cell, as in the CIMA reference code [REF].
-        const double wind_along = wind_component_along(
-            grid.wind_speed_m_s[src], grid.wind_direction_deg[src],
-            bearing_deg(kDRow[k], kDCol[k]));
-        const double tan_phi =
-            (grid.elevation_m[tgt] - grid.elevation_m[src]) / distance;
+        const double wind_along =
+            wind_component_along(wind_speed, wind_toward, bearing);
+        // The fire travels along the ground, including the climb [REF].
+        const double distance = std::hypot(run_m, rise_m);
         // Moisture of the TARGET cell, as in the CIMA reference code [REF].
         const double delay_s = travel_time_seconds(
             distance, nominal_speed_m_per_min(src_terrain),
             wind_speed_factor(wind_along), slope_speed_factor(tan_phi),
             moisture_speed_factor(grid.moisture[tgt]));
+        if (res.min_travel_time_s < 0.0 || delay_s < res.min_travel_time_s) {
+          res.min_travel_time_s = delay_s;
+        }
+        if (delay_s < 2.0 * dt) ++res.short_crossings;
 
         schedule(tgt, step + delay_to_steps(delay_s, dt));
       }
     }
 
-    // 3-4. Cells keep burning until their burn duration expires; no
-    // repeated probability checks. Expired cells are extinguished.
-    while (!burning.empty() &&
-           t >= res.ignition_time_s[burning.front()] + cfg.burn_duration_s) {
-      burning.pop_front();
-      ++burned_out;
-    }
-
-    StepStats s;
-    s.time_s = t;
-    s.burning = static_cast<int>(burning.size());
-    s.burned_out = burned_out;
-    s.new_ignitions = static_cast<int>(newly_ignited.size());
-    s.pending = pending_cells;
-    res.stats.push_back(s);
-
-    if (burning.empty() && pending_cells == 0) break;
+    // 3. Ignited cells never retry: spread is decided once, at ignition.
+    // With nothing left scheduled, no further cell can ever ignite.
+    if (pending_cells == 0) break;
   }
 
   res.hit_max_duration = step > max_step;
@@ -189,6 +183,13 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
   res.steps = step + 1;
   res.end_time_s = static_cast<double>(step) * dt;
   return res;
+}
+
+bool timestep_too_coarse(const SimResult& result) {
+  return result.successful_spreads > 0 &&
+         static_cast<double>(result.short_crossings) >
+             kMaxShortCrossingShare *
+                 static_cast<double>(result.successful_spreads);
 }
 
 }  // namespace wildfire

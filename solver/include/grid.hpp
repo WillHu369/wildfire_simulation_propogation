@@ -17,6 +17,8 @@ struct Grid {
   std::vector<Terrain> terrain;            // fuel type
   std::vector<double> elevation_m;         // m (slope -> travel time)
   std::vector<double> moisture;            // fraction 0-1 (travel time)
+  // Wind, converted on load from the input files' km/h and "blowing FROM"
+  // (wind_speed_kmh.csv, wind_from_deg.csv) to the units used internally:
   std::vector<double> wind_speed_m_s;      // m/s (travel time)
   std::vector<double> wind_direction_deg;  // blowing TOWARD, cw from north
 

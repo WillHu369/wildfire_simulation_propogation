@@ -1,0 +1,25 @@
+{
+  "model": "PROPAGATOR (C++ serial solver)",
+  "solver": "serial",
+  "scenario": "size_032",
+  "grid": { "rows": 32, "cols": 32 },
+  "cell_size_m": 30,
+  "end_time_s": 21600,
+  "never_ignited": -1,
+  "run": {
+    "wall_time_s": 0.0001859,
+    "steps": 21601,
+    "min_travel_time_s": 0.329391335299086,
+    "short_crossings": 26,
+    "hit_max_duration": true,
+    "cells_ignited": 99,
+    "spread_attempts": 438,
+    "successful_spreads": 121
+  },
+  "settings": {
+    "ignition_points": [[1, 30]],
+    "timestep_s": 1,
+    "max_duration_s": 21600,
+    "seed": 0
+  }
+}

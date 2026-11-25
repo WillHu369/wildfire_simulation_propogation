@@ -3,6 +3,7 @@
 #include <cmath>
 #include <fstream>
 #include <functional>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 
@@ -76,12 +77,13 @@ std::pair<int, int> read_csv(
   return {rows, cols};
 }
 
-// Fills one per-cell layer from a constant or a CSV file of the grid's shape.
+// Fills one per-cell layer from a CSV file of the grid's shape, or with
+// `fallback` everywhere if file is empty (the optional file was not found).
 // check(value) returns an error message, or "" if the value is valid.
 std::vector<double> load_layer(
-    const std::string& name, double constant, const std::string& file,
+    const std::string& name, const std::string& file, double fallback,
     const Grid& grid, const std::function<std::string(double)>& check) {
-  if (file.empty()) return std::vector<double>(grid.size(), constant);
+  if (file.empty()) return std::vector<double>(grid.size(), fallback);
 
   std::vector<double> values;
   values.reserve(grid.size());
@@ -99,18 +101,14 @@ std::vector<double> load_layer(
   return values;
 }
 
-void write_layer_source(std::ostream& out, const char* key, double constant,
-                        const std::string& file, bool last) {
-  out << "    \"" << key << "\": ";
-  if (file.empty()) {
-    out << "{ \"constant\": " << constant << " }";
-  } else {
-    out << "{ \"file\": \"" << json_escape(file) << "\" }";
-  }
-  out << (last ? "\n" : ",\n");
-}
-
 }  // namespace
+
+double kmh_to_m_s(double kmh) { return kmh / 3.6; }
+
+double wind_from_to_toward_deg(double from_deg) {
+  const double toward = std::fmod(from_deg + 180.0, 360.0);
+  return toward < 0.0 ? toward + 360.0 : toward;
+}
 
 Grid load_grid(const SimConfig& cfg) {
   Grid grid;
@@ -133,27 +131,30 @@ Grid load_grid(const SimConfig& cfg) {
   grid.cols = cols;
 
   auto any_value = [](double) { return std::string(); };
-  grid.elevation_m = load_layer("elevation", cfg.elevation_m,
-                                cfg.elevation_file, grid, any_value);
+  grid.elevation_m =
+      load_layer("elevation", cfg.elevation_file, 0.0, grid, any_value);
   grid.moisture = load_layer(
-      "moisture", cfg.moisture, cfg.moisture_file, grid, [](double v) {
-        return (v < 0.0 || v > 1.0) ? std::string("must be in [0, 1]")
+      "fuel moisture", cfg.moisture_file, 0.0, grid, [](double v) {
+        return (v < 0.0 || v > 1.0) ? std::string("must be a fraction in [0, 1]")
                                     : std::string();
       });
+
   grid.wind_speed_m_s = load_layer(
-      "wind speed", cfg.wind_speed_m_s, cfg.wind_speed_file, grid,
-      [](double v) {
+      "wind speed", cfg.wind_speed_file, 0.0, grid, [](double v) {
         return v < 0.0 ? std::string("must be >= 0") : std::string();
       });
+  for (double& v : grid.wind_speed_m_s) v = kmh_to_m_s(v);
+
   grid.wind_direction_deg =
-      load_layer("wind direction", cfg.wind_direction_deg,
-                 cfg.wind_direction_file, grid, any_value);
+      load_layer("wind direction", cfg.wind_from_file, 0.0, grid, any_value);
+  for (double& v : grid.wind_direction_deg) v = wind_from_to_toward_deg(v);
   return grid;
 }
 
 void write_grid_csv(const std::string& path, int rows, int cols,
                     const std::vector<double>& values) {
   auto out = open_out(path);
+  out << std::fixed << std::setprecision(3);
   for (int r = 0; r < rows; ++r) {
     for (int c = 0; c < cols; ++c) {
       if (c > 0) out << ',';
@@ -163,74 +164,41 @@ void write_grid_csv(const std::string& path, int rows, int cols,
   }
 }
 
-void write_stats_csv(const std::string& path,
-                     const std::vector<StepStats>& stats) {
-  auto out = open_out(path);
-  out << "time_s,burning,burned_out,new_ignitions,pending\n";
-  for (const StepStats& s : stats) {
-    out << s.time_s << ',' << s.burning << ',' << s.burned_out << ','
-        << s.new_ignitions << ',' << s.pending << '\n';
-  }
-}
-
 void write_metadata_json(const std::string& path, const Grid& grid,
                          const SimConfig& cfg, const SimResult& result,
-                         const std::string& config_path,
                          double wall_time_s) {
   auto out = open_out(path);
+  out << std::setprecision(15);
   out << "{\n";
-  out << "  \"grid\": {\n";
-  out << "    \"rows\": " << grid.rows << ",\n";
-  out << "    \"cols\": " << grid.cols << ",\n";
-  out << "    \"cell_size_m\": " << grid.cell_size_m << ",\n";
-  out << "    \"order\": \"row-major\",\n";
-  out << "    \"row0\": \"north\",\n";
-  out << "    \"col0\": \"west\"\n";
-  out << "  },\n";
-  out << "  \"files\": {\n";
-  out << "    \"ignition_time\": { \"path\": \"ignition_time.csv\", "
-         "\"units\": \"s\", \"never_ignited\": -1 },\n";
-  out << "    \"burn_duration\": { \"path\": \"burn_duration.csv\", "
-         "\"units\": \"s\", \"never_ignited\": -1 },\n";
-  out << "    \"stats\": { \"path\": \"stats.csv\" }\n";
-  out << "  },\n";
-  out << "  \"timing\": {\n";
-  out << "    \"timestep_s\": " << cfg.timestep_s << ",\n";
-  out << "    \"max_duration_s\": " << cfg.max_duration_s << ",\n";
-  out << "    \"end_time_s\": " << result.end_time_s << ",\n";
+  out << "  \"model\": \"PROPAGATOR (C++ serial solver)\",\n";
+  out << "  \"solver\": \"serial\",\n";
+  out << "  \"scenario\": \"" << json_escape(cfg.scenario_name) << "\",\n";
+  out << "  \"grid\": { \"rows\": " << grid.rows << ", \"cols\": " << grid.cols
+      << " },\n";
+  out << "  \"cell_size_m\": " << grid.cell_size_m << ",\n";
+  out << "  \"end_time_s\": " << result.end_time_s << ",\n";
+  out << "  \"never_ignited\": " << kNeverIgnited << ",\n";
+  out << "  \"run\": {\n";
+  out << "    \"wall_time_s\": " << wall_time_s << ",\n";
   out << "    \"steps\": " << result.steps << ",\n";
+  out << "    \"min_travel_time_s\": " << result.min_travel_time_s << ",\n";
+  out << "    \"short_crossings\": " << result.short_crossings << ",\n";
   out << "    \"hit_max_duration\": "
       << (result.hit_max_duration ? "true" : "false") << ",\n";
-  out << "    \"wall_time_s\": " << wall_time_s << "\n";
-  out << "  },\n";
-  out << "  \"layers\": {\n";
-  out << "    \"terrain\": { \"file\": \"" << json_escape(cfg.terrain_file)
-      << "\" },\n";
-  write_layer_source(out, "elevation_m", cfg.elevation_m, cfg.elevation_file, false);
-  write_layer_source(out, "moisture", cfg.moisture, cfg.moisture_file, false);
-  write_layer_source(out, "wind_speed_m_s", cfg.wind_speed_m_s,
-                     cfg.wind_speed_file, false);
-  write_layer_source(out, "wind_direction_deg", cfg.wind_direction_deg,
-                     cfg.wind_direction_file, true);
-  out << "  },\n";
-  out << "  \"settings\": {\n";
-  out << "    \"config_file\": \"" << json_escape(config_path) << "\",\n";
-  out << "    \"seed\": " << cfg.seed << ",\n";
-  out << "    \"burn_duration_s\": " << cfg.burn_duration_s << ",\n";
-  out << "    \"wind_direction_convention\": "
-         "\"blowing toward, degrees clockwise from north\",\n";
-  out << "    \"ignitions\": [";
-  for (std::size_t i = 0; i < cfg.ignitions.size(); ++i) {
-    const Ignition& ig = cfg.ignitions[i];
-    out << (i ? ", " : "") << "{ \"row\": " << ig.row << ", \"col\": "
-        << ig.col << ", \"time_s\": " << ig.time_s << " }";
-  }
-  out << "]\n";
-  out << "  },\n";
-  out << "  \"summary\": {\n";
   out << "    \"cells_ignited\": " << result.cells_ignited << ",\n";
   out << "    \"spread_attempts\": " << result.spread_attempts << ",\n";
   out << "    \"successful_spreads\": " << result.successful_spreads << "\n";
+  out << "  },\n";
+  out << "  \"settings\": {\n";
+  out << "    \"ignition_points\": [";
+  for (std::size_t i = 0; i < cfg.ignitions.size(); ++i) {
+    out << (i ? ", " : "") << "[" << cfg.ignitions[i].row << ", "
+        << cfg.ignitions[i].col << "]";
+  }
+  out << "],\n";
+  out << "    \"timestep_s\": " << cfg.timestep_s << ",\n";
+  out << "    \"max_duration_s\": " << cfg.max_duration_s << ",\n";
+  out << "    \"seed\": " << cfg.seed << "\n";
   out << "  }\n";
   out << "}\n";
 }
