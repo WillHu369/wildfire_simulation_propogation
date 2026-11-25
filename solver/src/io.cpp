@@ -182,6 +182,7 @@ void write_metadata_json(const std::string& path, const Grid& grid,
   out << "    \"wall_time_s\": " << wall_time_s << ",\n";
   out << "    \"steps\": " << result.steps << ",\n";
   out << "    \"min_travel_time_s\": " << result.min_travel_time_s << ",\n";
+  out << "    \"short_crossings\": " << result.short_crossings << ",\n";
   out << "    \"hit_max_duration\": "
       << (result.hit_max_duration ? "true" : "false") << ",\n";
   out << "    \"cells_ignited\": " << result.cells_ignited << ",\n";

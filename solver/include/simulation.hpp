@@ -15,6 +15,7 @@ struct SimResult {
   std::vector<double> ignition_time_s;  // s since start, -1 = never
   double end_time_s = 0.0;              // last ignition, or the hard stop
   double min_travel_time_s = -1.0;      // fastest cell crossing, -1 if none
+  long long short_crossings = 0;        // crossings < 2 timesteps long
   long long steps = 0;
   long long spread_attempts = 0;
   long long successful_spreads = 0;
@@ -36,12 +37,18 @@ struct SimResult {
 // non-burnable cell, or at a negative time, before any simulation runs.
 SimResult run_simulation(const Grid& grid, const SimConfig& cfg);
 
-// In:  timestep_s (double); result (SimResult) from run_simulation
-// Out: bool, true if the timestep is more than half the fastest cell
-//      crossing in the run
-// Why: arrival times are rounded to whole timesteps (minimum one), so a
-//      coarse timestep slows the fire and hides speed differences between
-//      fuels, wind and slope. The caller prints a warning.
-bool timestep_too_coarse(double timestep_s, const SimResult& result);
+// Share of successful crossings that may be shorter than two timesteps
+// before the timestep counts as too coarse [OURS].
+constexpr double kMaxShortCrossingShare = 0.05;
+
+// In:  result (SimResult) from run_simulation
+// Out: bool, true if more than 5 % of the successful cell crossings took
+//      less than two timesteps
+// Why: arrival times are rounded to whole timesteps (minimum one), so when
+//      many crossings are that short the fire runs too slowly and speed
+//      differences between fuels, wind and slope disappear. A few very
+//      fast crossings (e.g. steep uphill) barely matter. The caller prints
+//      a warning.
+bool timestep_too_coarse(const SimResult& result);
 
 }  // namespace wildfire

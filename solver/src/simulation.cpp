@@ -163,6 +163,7 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
         if (res.min_travel_time_s < 0.0 || delay_s < res.min_travel_time_s) {
           res.min_travel_time_s = delay_s;
         }
+        if (delay_s < 2.0 * dt) ++res.short_crossings;
 
         schedule(tgt, step + delay_to_steps(delay_s, dt));
       }
@@ -180,9 +181,11 @@ SimResult run_simulation(const Grid& grid, const SimConfig& cfg) {
   return res;
 }
 
-bool timestep_too_coarse(double timestep_s, const SimResult& result) {
-  return result.min_travel_time_s >= 0.0 &&
-         timestep_s > 0.5 * result.min_travel_time_s;
+bool timestep_too_coarse(const SimResult& result) {
+  return result.successful_spreads > 0 &&
+         static_cast<double>(result.short_crossings) >
+             kMaxShortCrossingShare *
+                 static_cast<double>(result.successful_spreads);
 }
 
 }  // namespace wildfire

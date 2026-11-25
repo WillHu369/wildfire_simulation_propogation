@@ -297,29 +297,37 @@ void test_firebreak() {
 }
 
 void test_timestep_check() {
-  // Grassland, 20 m cells, no wind/slope: fastest crossing is the cardinal
-  // step, 20 m / 120 m/min = 10 s. Timesteps above 5 s are too coarse.
+  // Grassland, 20 m cells, flat, no wind: every crossing is 10 s (cardinal)
+  // or 14.1 s (diagonal), so timesteps up to 5 s leave none under 2 steps.
   const auto grid = uniform_grid(21, 21, Terrain::Grassland);
-  auto cfg = base_config(10, 10);
-  const auto fine = wildfire::run_simulation(grid, cfg);
+  auto run_with = [&](double dt) {
+    auto cfg = base_config(10, 10);
+    cfg.timestep_s = dt;
+    return wildfire::run_simulation(grid, cfg);
+  };
+  const auto fine = run_with(1.0);
   CHECK_NEAR(fine.min_travel_time_s, 10.0, 1e-9);
-  CHECK(!wildfire::timestep_too_coarse(1.0, fine));
-  CHECK(!wildfire::timestep_too_coarse(5.0, fine));
-  CHECK(wildfire::timestep_too_coarse(5.1, fine));
+  CHECK(fine.short_crossings == 0);
+  CHECK(!wildfire::timestep_too_coarse(fine));
+  CHECK(!wildfire::timestep_too_coarse(run_with(5.0)));
+  // Above 5 s the cardinal crossings (about half of them) are under 2 steps.
+  CHECK(wildfire::timestep_too_coarse(run_with(5.1)));
 
   // The problem the check guards against: with 60 s steps every crossing is
   // rounded up to one step, so the same fire finishes much later.
-  cfg.timestep_s = 60.0;
-  const auto coarse = wildfire::run_simulation(grid, cfg);
-  CHECK(wildfire::timestep_too_coarse(cfg.timestep_s, coarse));
+  const auto coarse = run_with(60.0);
+  CHECK(coarse.short_crossings == coarse.successful_spreads);
+  CHECK(wildfire::timestep_too_coarse(coarse));
   CHECK(coarse.end_time_s > 3.0 * fine.end_time_s);
 
   // No spread at all (a lone burnable cell): nothing to warn about.
   auto lone = uniform_grid(3, 3, Terrain::NonVegetated);
   lone.terrain[lone.index(1, 1)] = Terrain::Grassland;
-  const auto none = wildfire::run_simulation(lone, base_config(1, 1));
+  auto lone_cfg = base_config(1, 1);
+  lone_cfg.timestep_s = 60.0;
+  const auto none = wildfire::run_simulation(lone, lone_cfg);
   CHECK(none.min_travel_time_s == -1.0);
-  CHECK(!wildfire::timestep_too_coarse(60.0, none));
+  CHECK(!wildfire::timestep_too_coarse(none));
 }
 
 void test_max_duration() {

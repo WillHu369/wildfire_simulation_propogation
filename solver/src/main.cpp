@@ -36,14 +36,15 @@ int main(int argc, char** argv) {
     const auto stop = std::chrono::steady_clock::now();
     const double wall_s = std::chrono::duration<double>(stop - start).count();
 
-    if (wildfire::timestep_too_coarse(cfg.timestep_s, result)) {
+    if (wildfire::timestep_too_coarse(result)) {
+      const double share = 100.0 * static_cast<double>(result.short_crossings) /
+                           static_cast<double>(result.successful_spreads);
       std::cerr << "warning: timestep_s = " << cfg.timestep_s
-                << " s is too coarse for this run. The fastest cell crossing "
-                   "took "
+                << " s is too coarse for this run: " << share
+                << "% of cell crossings took less than two timesteps (fastest "
                 << result.min_travel_time_s
-                << " s, and arrival times are rounded to whole steps, so the "
-                   "fire will spread too slowly. Use timestep_s <= "
-                << 0.5 * result.min_travel_time_s << ".\n";
+                << " s). Arrival times are rounded to whole steps, so the fire "
+                   "will spread too slowly. Use a smaller timestep_s.\n";
     }
 
     std::filesystem::create_directories(out_dir);
