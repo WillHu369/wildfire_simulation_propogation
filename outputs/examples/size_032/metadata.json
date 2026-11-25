@@ -4,16 +4,17 @@
   "scenario": "size_032",
   "grid": { "rows": 32, "cols": 32 },
   "cell_size_m": 30,
-  "end_time_s": 251,
+  "end_time_s": 1919,
   "never_ignited": -1,
   "run": {
-    "wall_time_s": 2.17e-05,
-    "steps": 252,
-    "min_travel_time_s": 0.0118847933933389,
+    "wall_time_s": 6.15e-05,
+    "steps": 1920,
+    "min_travel_time_s": 0.949000839923728,
+    "short_crossings": 8,
     "hit_max_duration": false,
-    "cells_ignited": 12,
-    "spread_attempts": 53,
-    "successful_spreads": 17
+    "cells_ignited": 33,
+    "spread_attempts": 146,
+    "successful_spreads": 46
   },
   "settings": {
     "ignition_points": [[1, 30]],
